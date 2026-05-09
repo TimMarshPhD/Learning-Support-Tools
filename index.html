@@ -1,0 +1,1249 @@
+<!--
+  =============================================================================
+  PEDIATRIC DIAGNOSTIC SCENARIO GENERATOR — WSU branded
+  Version 0.3 — adds coherence rules to challenge selection
+  =============================================================================
+  Single-file embeddable tool. To customise content, edit the SCENARIO_CONFIG
+  object below. The rest of the code reads from it.
+
+  ARCHITECTURE
+  - 5 student-selected anchors (setting, age, complaint, caregiver, difficulty)
+  - Diagnoses and challenge factors are filtered by compatible_with tags
+  - Difficulty carries a challenge budget that constrains factor selection
+  - Severity is rolled per-diagnosis from its allowed list
+  - The brief follows the 6-section training-document format
+  - Rubric is a placeholder pending the real assignment rubric
+
+  COHERENCE RULES (encoded in selectChallenges)
+  - Per-category caps via challenge budget (clinical_max, communication_max, etc.)
+  - Total factor cap and major-factor cap via challenge budget
+  - Caregiver-load cap: max 2 factors tagged caregiver_focused per scenario
+  - Diagnosis-factor incompatibility: diagnoses can list incompatible_factors
+  - clinical_required: at least one clinical factor in challenging difficulty
+
+  COHERENCE RULES (authoring guidance, not enforced in code)
+  - Don't add red flags unless the rubric can evaluate their detection
+  - Don't add hidden safety/disclosure factors without rubric support
+  - Don't let atmospheric complications obscure the core clinical learning goal
+  - Don't add 'deteriorating' severity without a clear escalation pathway
+
+  BRANDING NOTE: The W shield in the header is the official WSU asset
+  (cropped viewBox to fit layout; path data unchanged from source file).
+  =============================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pediatric Diagnostic Scenario Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --maroon: #A6093D;
+    --maroon-dark: #7A0029;
+    --maroon-soft: #f5e6ec;
+    --maroon-tint: #fbf2f5;
+    --bg: #f5f5f3;
+    --panel: #ffffff;
+    --border: #d8d8d2;
+    --ink: #1a1a1a;
+    --ink-soft: #555555;
+    --good: #2d6a4f;
+    --warn: #b8860b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+    font-weight: 300;
+  }
+  .container {
+    max-width: 780px;
+    margin: 0 auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .brand-bar {
+    background: var(--maroon);
+    color: white;
+    padding: 26px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+  }
+  .title-block h1 {
+    font-family: 'Open Sans', sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    line-height: 1.18;
+  }
+  .title-block .lede {
+    margin: 10px 0 0 0;
+    font-size: 13px;
+    font-weight: 300;
+    opacity: 0.92;
+    max-width: 460px;
+  }
+  .brand-logo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .wordmark-main {
+    font-family: 'Open Sans', sans-serif;
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-align: center;
+    line-height: 1;
+  }
+  .wordmark-sub {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 8.5px;
+    letter-spacing: 0.22em;
+    text-align: center;
+    line-height: 1;
+    margin-top: 2px;
+  }
+  .shield {
+    width: 26px;
+    height: auto;
+    margin-top: 4px;
+    display: block;
+  }
+
+  .content {
+    padding: 30px 32px 32px;
+  }
+  fieldset {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--maroon);
+    border-radius: 0;
+    padding: 18px 22px;
+    margin: 0 0 22px 0;
+    background: white;
+  }
+  legend {
+    padding: 0 10px;
+    font-family: 'Open Sans', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--maroon);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  select, input[type="text"] {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: white;
+    font-size: 14px;
+    font-family: 'Open Sans', sans-serif;
+    font-weight: 400;
+    color: var(--ink);
+  }
+  select:focus, input[type="text"]:focus {
+    outline: none;
+    border-color: var(--maroon);
+    box-shadow: 0 0 0 2px var(--maroon-soft);
+  }
+  .button-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  button {
+    padding: 10px 20px;
+    border: 1px solid var(--maroon);
+    background: var(--maroon);
+    color: white;
+    border-radius: 2px;
+    font-size: 12px;
+    font-family: 'Open Sans', sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  button:hover {
+    background: var(--maroon-dark);
+    border-color: var(--maroon-dark);
+  }
+  button.secondary {
+    background: white;
+    color: var(--maroon);
+  }
+  button.secondary:hover {
+    background: var(--maroon-soft);
+    color: var(--maroon-dark);
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button:disabled:hover { background: var(--maroon); border-color: var(--maroon); }
+  .seed-box { display: flex; gap: 8px; align-items: stretch; }
+  .seed-box input {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 13px;
+  }
+  .seed-display {
+    background: var(--maroon-tint);
+    border: 1px solid var(--maroon-soft);
+    border-left: 3px solid var(--maroon);
+    border-radius: 0;
+    padding: 12px 14px;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 13px;
+    word-break: break-all;
+    margin-top: 12px;
+    color: var(--ink);
+  }
+  .seed-display strong {
+    color: var(--maroon);
+    display: block;
+    font-family: 'Open Sans', sans-serif;
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+  }
+  .preview {
+    background: #fafaf8;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--maroon);
+    border-radius: 0;
+    padding: 14px 16px;
+    margin-top: 12px;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    max-height: 380px;
+    overflow-y: auto;
+    color: var(--ink-soft);
+  }
+  .status {
+    font-size: 13px;
+    color: var(--good);
+    margin-top: 12px;
+    min-height: 18px;
+    font-weight: 400;
+  }
+  details summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--maroon);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    user-select: none;
+  }
+  details[open] summary { margin-bottom: 8px; }
+  .help {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 6px;
+    font-style: italic;
+  }
+  @media (max-width: 520px) {
+    .brand-bar { flex-direction: column-reverse; gap: 16px; padding: 20px 22px; }
+    .brand-logo { align-self: flex-end; flex-direction: row; }
+    .content { padding: 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="brand-bar">
+    <div class="title-block">
+      <h1 id="appTitle">Loading…</h1>
+      <p class="lede" id="appSubtitle"></p>
+    </div>
+    <div class="brand-logo" aria-label="Western Sydney University">
+      <div class="wordmark-main">WESTERN SYDNEY</div>
+      <div class="wordmark-sub">UNIVERSITY</div>
+      <svg class="shield" xmlns="http://www.w3.org/2000/svg" viewBox="53 15 106 132" role="img" aria-label="Western Sydney University shield">
+        <path fill="#ffffff" fill-rule="evenodd" d="
+          M55 17 H157 V96
+          C157 107 151 116 141 124
+          C132 132 119 139 106 145
+          C93 139 80 132 71 124
+          C61 116 55 107 55 96
+          V17 Z
+          M65 39
+          L67 36 H74
+          L77 39
+          L88 88
+          L102 36 H109
+          L111 38
+          L123 88
+          L134 39
+          L137 36 H144
+          L146 38
+          L129 107
+          L115 102
+          L106 61
+          L96 102
+          L84 107
+          L81 106
+          L65 39 Z
+        "/>
+      </svg>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <fieldset>
+      <legend>Scenario parameters</legend>
+      <div id="formFields"></div>
+    </fieldset>
+
+    <div class="button-row">
+      <button id="generateBtn">Generate scenario</button>
+      <button id="downloadBtn" class="secondary" disabled>Download .txt file</button>
+    </div>
+    <div class="status" id="statusMsg"></div>
+
+    <fieldset style="margin-top:24px">
+      <legend>Scenario seed</legend>
+      <div class="field">
+        <label for="seedInput">Reproduce a previous scenario by pasting its seed:</label>
+        <div class="seed-box">
+          <input type="text" id="seedInput" placeholder="e.g. s3-2-1-0-3-2-r847291">
+          <button id="loadSeedBtn" class="secondary">Load seed</button>
+        </div>
+        <p class="help">Each generated scenario produces a unique seed that captures all anchor selections and hidden rolls. Save it for grading or reproducibility.</p>
+      </div>
+      <div id="seedDisplay" style="display:none" class="seed-display">
+        <strong>Current scenario seed</strong>
+        <span id="seedValue"></span>
+      </div>
+    </fieldset>
+
+    <details style="margin-top:18px">
+      <summary>Preview generated brief</summary>
+      <div class="preview" id="previewBox">No scenario generated yet.</div>
+    </details>
+
+  </div>
+</div>
+
+<script>
+// =============================================================================
+// SCENARIO_CONFIG — Edit this object to customise the tool.
+// All instructor-facing content lives here. The logic below should not need
+// modification.
+// =============================================================================
+
+const SCENARIO_CONFIG = {
+
+  meta: {
+    title: "Pediatric Diagnostic Scenario Generator",
+    subtitle: "Generate a structured scenario brief for your Copilot simulation session.",
+    version: "0.3 prototype",
+    status: "Prototype only — not clinically validated. Content for structural testing."
+  },
+
+  // ===========================================================================
+  // ANCHORS — student-selected dropdowns (5)
+  // ===========================================================================
+
+  anchors: [
+    {
+      key: "setting",
+      label: "Clinical setting",
+      options: [
+        { id: "ed", label: "Emergency department",
+          scene: "Emergency department, mid-shift, moderate caseload" },
+        { id: "outpatient", label: "Paediatric outpatient clinic",
+          scene: "Paediatric outpatient clinic, scheduled appointment" },
+        { id: "community", label: "Community health / general practice clinic",
+          scene: "Community general practice clinic, daytime appointment" }
+      ]
+    },
+    {
+      key: "age",
+      label: "Child age",
+      options: [
+        { id: "infant", label: "Infant (0–12 months)",
+          description: "a 9-month-old infant",
+          developmental_notes: "Pre-verbal. Communicates through behaviour (crying, withdrawal, feeding cues). Caregiver provides all history. Examination should be opportunistic; child often most settled on caregiver's lap." },
+        { id: "toddler", label: "Toddler (1–3 years)",
+          description: "a 2-year-old toddler",
+          developmental_notes: "Limited verbal. May respond to simple words but cannot reliably describe symptoms. Caregiver provides most history. Stranger anxiety common; build rapport before examination." },
+        { id: "school_age", label: "School-aged child (6–11 years)",
+          description: "a 9-year-old child",
+          developmental_notes: "Can describe symptoms in their own words. May defer to caregiver or feel unable to speak up. Worth addressing directly while keeping caregiver involved." },
+        { id: "adolescent", label: "Adolescent (12–17 years)",
+          description: "a 14-year-old adolescent",
+          developmental_notes: "Should be addressed directly as the primary informant. May have private concerns they will not share with the caregiver present. Confidentiality and consent considerations apply." }
+      ]
+    },
+    {
+      key: "complaint",
+      label: "Presenting complaint category",
+      options: [
+        { id: "respiratory", label: "Respiratory symptoms",
+          caregiver_summary: "difficulty breathing and a persistent cough" },
+        { id: "fever", label: "Fever / suspected infection",
+          caregiver_summary: "fever that won't settle" },
+        { id: "gi", label: "Gastrointestinal symptoms",
+          caregiver_summary: "vomiting and reduced oral intake" },
+        { id: "injury_pain", label: "Injury / pain",
+          caregiver_summary: "pain since an incident yesterday" }
+      ]
+    },
+    {
+      key: "caregiver",
+      label: "Caregiver presentation",
+      options: [
+        { id: "anxious_first_time", label: "Anxious first-time parent",
+          disposition_text: "An anxious first-time parent, visibly worried, asking many questions, prone to interrupting",
+          initial_tolerance: 7, tolerance_max: 10,
+          response_rules: "Calms when student explains what they are doing and why. Becomes more anxious if rushed, dismissed, or given vague answers." },
+        { id: "overwhelmed_grandparent", label: "Overwhelmed grandparent",
+          disposition_text: "An overwhelmed grandparent who is the temporary caregiver, tired and struggling to recall details",
+          initial_tolerance: 6, tolerance_max: 8,
+          response_rules: "Becomes more cooperative when student is patient and uses plain language. May not know all medical history; do not punish them for gaps." },
+        { id: "guarded", label: "Guarded parent",
+          disposition_text: "A guarded parent, slow to trust, providing minimal information unless explicitly asked",
+          initial_tolerance: 5, tolerance_max: 7,
+          response_rules: "Opens up gradually if student demonstrates respect and competence. Shuts down if student is dismissive, judgemental, or rushed." },
+        { id: "distracted", label: "Distracted parent with competing demands",
+          disposition_text: "A distracted parent managing competing demands (a younger sibling, a phone call, work concerns)",
+          initial_tolerance: 6, tolerance_max: 8,
+          response_rules: "Engages well when student gets their full attention through clear, direct communication. Drifts back to distractions if student is overly verbose." }
+      ]
+    },
+    {
+      key: "difficulty",
+      label: "Difficulty",
+      options: [
+        { id: "tutorial", label: "Tutorial",
+          description: "Introduces the simulation interface. Cooperative caregiver, simple presentation, explicit teaching feedback.",
+          challenge_budget: { total: 0, major_max: 0, clinical_max: 0, communication_max: 0, context_access_max: 0, situational_max: 0, clinical_required: false },
+          time_out: { warning_at: 40, hard_cap: 60 },
+          scaffolding: {
+            agent_meta_intro: true,
+            prompt_for_actions: true,
+            caregiver_cooperation: "high — caregiver volunteers most relevant information without prompting",
+            feedback_style: "instructional and step-by-step; explain what mattered and why"
+          } },
+        { id: "simple", label: "Simple",
+          description: "Clear clinical presentation with one minor complication. Mostly cooperative caregiver.",
+          challenge_budget: { total: 1, major_max: 0, clinical_max: 1, communication_max: 1, context_access_max: 1, situational_max: 1, clinical_required: false },
+          time_out: { warning_at: 35, hard_cap: 50 },
+          scaffolding: {
+            agent_meta_intro: false,
+            prompt_for_actions: false,
+            caregiver_cooperation: "mostly cooperative — answers relevant questions clearly when asked",
+            feedback_style: "rubric-linked with specific examples"
+          } },
+        { id: "complex", label: "Complex",
+          description: "Less tidy presentation. Caregiver may be anxious, guarded, confused, or distracted. Information must be elicited.",
+          challenge_budget: { total: 2, major_max: 1, clinical_max: 1, communication_max: 1, context_access_max: 1, situational_max: 1, clinical_required: false },
+          time_out: { warning_at: 30, hard_cap: 50 },
+          scaffolding: {
+            agent_meta_intro: false,
+            prompt_for_actions: false,
+            caregiver_cooperation: "conditional — answers reflect quality of student communication",
+            feedback_style: "rubric-linked with specific examples; distinguish minor from clinically important omissions"
+          } },
+        { id: "challenging", label: "Challenging",
+          description: "Ambiguous or evolving presentation. Caregiver may resist or minimise. Tests prioritisation under pressure.",
+          challenge_budget: { total: 3, major_max: 2, clinical_max: 2, communication_max: 2, context_access_max: 2, situational_max: 2, clinical_required: true },
+          time_out: { warning_at: 30, hard_cap: 50 },
+          scaffolding: {
+            agent_meta_intro: false,
+            prompt_for_actions: false,
+            caregiver_cooperation: "dynamic — caregiver behaviour responds to student communication quality and may escalate or shut down",
+            feedback_style: "rubric-linked with specific examples; weight prioritisation, safety, and reasoning heavily"
+          } }
+      ]
+    }
+  ],
+
+  // ===========================================================================
+  // DIAGNOSES — filtered by anchor compatibility
+  // Optional `incompatible_factors`: array of challenge factor ids that
+  // should not be combined with this diagnosis (because they're redundant or
+  // contradictory).
+  // ===========================================================================
+
+  diagnoses: [
+    {
+      id: "viral_uri",
+      label: "Viral upper respiratory infection",
+      compatible_with: { setting: ["ed", "outpatient", "community"], age: ["infant", "toddler", "school_age", "adolescent"], complaint: ["respiratory", "fever"] },
+      severity_options: ["mild", "moderate"],
+      weight: 3,
+      hidden_clinical_logic: "Self-limiting viral illness. Student should assess respiratory effort, hydration, feeding, fever pattern, and rule out lower respiratory involvement.",
+      relevant_negatives: ["no respiratory distress at rest", "adequate oral intake", "no lethargy"],
+      red_flag_pool: ["increasing work of breathing", "reduced oral intake", "lethargy"],
+      escalation_pathway: "Reassurance and safety-netting. Return if breathing worsens, feeding poor, or new red flags emerge.",
+      feedback_focus: ["distinguishing viral from bacterial illness", "caregiver reassurance without false certainty", "clear safety-netting tied to specific red flags"]
+    },
+    {
+      id: "bronchiolitis",
+      label: "Bronchiolitis (RSV)",
+      compatible_with: { setting: ["ed", "outpatient"], age: ["infant", "toddler"], complaint: ["respiratory"] },
+      severity_options: ["mild", "moderate", "deteriorating"],
+      weight: 2,
+      hidden_clinical_logic: "Lower respiratory tract viral infection. Student should assess respiratory effort, oxygenation, feeding adequacy, hydration, and recognise escalation thresholds.",
+      relevant_negatives: ["no apnoeas described", "no cyanosis"],
+      red_flag_pool: ["nasal flaring", "subcostal recession", "reduced wet nappies", "feeding less than half normal", "lethargy"],
+      escalation_pathway: "Senior review. Consider admission if moderate-to-severe. Oxygen if SpO2 below threshold. NG feeds if poor oral intake.",
+      feedback_focus: ["respiratory assessment thoroughness", "recognition of red flags", "escalation appropriateness", "caregiver communication around admission decision"]
+    },
+    {
+      id: "viral_gastro",
+      label: "Viral gastroenteritis",
+      compatible_with: { setting: ["ed", "outpatient", "community"], age: ["infant", "toddler", "school_age", "adolescent"], complaint: ["gi", "fever"] },
+      severity_options: ["mild", "moderate"],
+      weight: 3,
+      hidden_clinical_logic: "Self-limiting viral illness with risk of dehydration. Student should assess hydration status, fluid intake and output, weight loss, and rule out other causes.",
+      relevant_negatives: ["no bilious vomiting", "no bloody stool", "no abdominal mass"],
+      red_flag_pool: ["reduced wet nappies", "lethargy", "sunken fontanelle (infant)", "poor skin turgor", "weight loss"],
+      escalation_pathway: "Oral rehydration. IV fluids if severe. Admit if unable to maintain hydration orally.",
+      feedback_focus: ["hydration assessment", "distinguishing from surgical abdomen", "caregiver education on rehydration technique"]
+    },
+    {
+      id: "appendicitis_atypical",
+      label: "Appendicitis (atypical presentation)",
+      compatible_with: { setting: ["ed", "outpatient"], age: ["school_age", "adolescent"], complaint: ["gi", "injury_pain"] },
+      // The diagnosis is already atypical by definition; adding the
+      // 'atypical_presentation' factor would be redundant double-counting.
+      incompatible_factors: ["atypical_presentation"],
+      severity_options: ["moderate", "deteriorating"],
+      weight: 1,
+      hidden_clinical_logic: "Surgical abdomen requiring escalation. Student should localise pain, assess for peritonism, recognise atypical features, and escalate appropriately.",
+      relevant_negatives: ["no diarrhoea", "no urinary symptoms"],
+      red_flag_pool: ["right iliac fossa tenderness", "guarding", "rebound tenderness", "fever rising", "child unwilling to walk"],
+      escalation_pathway: "Urgent surgical review. NBM. Analgesia. IV access. Bloods.",
+      feedback_focus: ["localising abdominal pain", "recognition of surgical abdomen", "urgency of escalation", "NBM and surgical preparation"]
+    },
+    {
+      id: "uti_fever_only",
+      label: "Urinary tract infection (presenting as fever only)",
+      compatible_with: { setting: ["ed", "outpatient", "community"], age: ["infant", "toddler"], complaint: ["fever"] },
+      severity_options: ["mild", "moderate"],
+      weight: 1,
+      hidden_clinical_logic: "Occult UTI requiring urine sample. Student should consider non-specific presentations of UTI in young children, request urine sample, and consider antibiotics.",
+      relevant_negatives: ["no respiratory symptoms", "no GI symptoms", "no rash"],
+      red_flag_pool: ["irritability", "poor feeding", "previous UTI history", "no clear focus on examination"],
+      escalation_pathway: "Urine sample (clean catch or in/out catheter as age-appropriate). Empirical antibiotics if clinical concern. Follow-up with culture results.",
+      feedback_focus: ["considering occult infection in young children", "sample collection technique", "antibiotic stewardship", "follow-up planning"]
+    },
+    {
+      id: "minor_injury",
+      label: "Minor injury / soft tissue trauma",
+      compatible_with: { setting: ["ed", "community"], age: ["toddler", "school_age", "adolescent"], complaint: ["injury_pain"] },
+      severity_options: ["mild"],
+      weight: 2,
+      hidden_clinical_logic: "Soft tissue injury without fracture. Student should obtain mechanism of injury, examine for signs of fracture, assess pain, and consider non-accidental injury where mechanism does not fit.",
+      relevant_negatives: ["no deformity", "range of motion preserved", "mechanism consistent with reported injury"],
+      red_flag_pool: ["mechanism inconsistent with injury", "previous injuries on history", "delayed presentation", "child reluctant to discuss with caregiver present"],
+      escalation_pathway: "Analgesia. RICE. Safety-netting for worsening pain or signs of fracture.",
+      feedback_focus: ["mechanism of injury elicitation", "examination thoroughness", "pain management", "awareness of NAI considerations without alarm"]
+    },
+    {
+      id: "asthma_unwell",
+      label: "Asthma exacerbation",
+      compatible_with: { setting: ["ed", "outpatient"], age: ["school_age", "adolescent"], complaint: ["respiratory"] },
+      severity_options: ["mild", "moderate", "deteriorating"],
+      weight: 1,
+      hidden_clinical_logic: "Reversible airway obstruction. Student should assess severity, ask about preventer use and triggers, deliver bronchodilator, and reassess.",
+      relevant_negatives: ["no foreign body history", "no acute onset chest pain"],
+      red_flag_pool: ["unable to complete sentences", "tracheal tug", "drowsiness", "silent chest", "previous ICU admission"],
+      escalation_pathway: "Salbutamol via spacer or nebuliser. Steroids. Senior review if not responding. ICU review if severe.",
+      feedback_focus: ["severity assessment", "preventer history", "bronchodilator technique", "recognition of life-threatening features"]
+    }
+  ],
+
+  // ===========================================================================
+  // CHALLENGE FACTORS — selected by difficulty's challenge budget
+  //
+  // Optional `caregiver_focused: true` flags factors that test the student's
+  // interpersonal navigation of the caregiver. The selectChallenges() function
+  // caps the count of caregiver_focused factors per scenario to prevent
+  // unrealistic stacking of caregiver-facing complications.
+  //
+  // Categories: clinical, communication, context_access, situational,
+  // safety_disclosure (placeholder, disabled by default)
+  // ===========================================================================
+
+  challengeFactors: [
+    // ----- Clinical -----
+    { id: "vague_timeline", category: "clinical", severity: "minor",
+      label: "Symptom timeline is unclear",
+      compatible_with: {},
+      effect_on_simulation: "Caregiver gives vague answers about onset and duration. Real timeline must be pieced together through follow-up questions.",
+      assessment_relevance: "Tests history-taking technique and persistence in clarifying ambiguity." },
+    { id: "subtle_red_flag", category: "clinical", severity: "major",
+      label: "A subtle red flag is present and must be elicited",
+      compatible_with: {},
+      effect_on_simulation: "A clinically significant red flag is present but not volunteered. Student must ask the right question to surface it. (See 'red flags present' in Clinical information.)",
+      assessment_relevance: "Tests systematic history-taking and recognition of clinical concern." },
+    { id: "atypical_presentation", category: "clinical", severity: "major",
+      label: "Symptom pattern is atypical for the diagnosis",
+      compatible_with: {},
+      effect_on_simulation: "Symptoms do not fit the textbook pattern. Student must reason through alternatives rather than pattern-match.",
+      assessment_relevance: "Tests clinical reasoning and willingness to consider differentials." },
+    { id: "relevant_negative_required", category: "clinical", severity: "minor",
+      label: "An important negative finding must be specifically elicited",
+      compatible_with: {},
+      effect_on_simulation: "Caregiver volunteers no information about a clinically important negative. Student must specifically ask to confirm absence.",
+      assessment_relevance: "Tests systematic history and rule-out reasoning." },
+
+    // ----- Communication (all caregiver_focused) -----
+    { id: "low_health_literacy", category: "communication", severity: "minor",
+      caregiver_focused: true,
+      label: "Caregiver has low health literacy",
+      compatible_with: {},
+      effect_on_simulation: "Caregiver misunderstands medical terms. Asks for clarification, or sometimes nods without understanding (which student must check).",
+      assessment_relevance: "Tests use of plain language and checking for understanding." },
+    { id: "online_research_misinfo", category: "communication", severity: "minor",
+      caregiver_focused: true,
+      label: "Caregiver has done online research and arrived with strong opinions",
+      compatible_with: {},
+      effect_on_simulation: "Caregiver references things they have read online, some accurate and some not. May resist explanations that contradict their preconceptions.",
+      assessment_relevance: "Tests respectful correction of misinformation and patient-centred education." },
+    { id: "interrupting_anxious", category: "communication", severity: "major",
+      caregiver_focused: true,
+      label: "Caregiver interrupts frequently due to anxiety",
+      compatible_with: { caregiver: ["anxious_first_time"] },
+      effect_on_simulation: "Caregiver cuts off student questions, jumps ahead, or returns to tangential worries.",
+      assessment_relevance: "Tests redirecting conversation while validating concerns." },
+    { id: "minimising_caregiver", category: "communication", severity: "major",
+      caregiver_focused: true,
+      label: "Caregiver minimises symptoms or delays disclosure",
+      compatible_with: { caregiver: ["guarded", "distracted"] },
+      effect_on_simulation: "Caregiver downplays symptoms or omits relevant information until specifically asked.",
+      assessment_relevance: "Tests ability to elicit information from a non-forthcoming source without becoming confrontational." },
+    { id: "language_barrier", category: "communication", severity: "major",
+      caregiver_focused: true,
+      label: "English is not the caregiver's first language",
+      compatible_with: {},
+      effect_on_simulation: "Caregiver speaks functional but not fluent English. Some clinical terms must be rephrased. Misunderstandings emerge if jargon is used.",
+      assessment_relevance: "Tests culturally responsive communication and use of plain language." },
+
+    // ----- Context / access (not flagged caregiver_focused: these test
+    //       family-centred planning rather than interpersonal load) -----
+    { id: "transport_difficulty", category: "context_access", severity: "minor",
+      label: "Family has transport difficulty for follow-up",
+      compatible_with: {},
+      effect_on_simulation: "Caregiver mentions or reveals (if asked) that returning for follow-up is hard.",
+      assessment_relevance: "Tests practical, contextually-grounded care planning." },
+    { id: "cost_concerns", category: "context_access", severity: "minor",
+      label: "Family has cost concerns about medications or care",
+      compatible_with: {},
+      effect_on_simulation: "Caregiver expresses worry about cost. Student should acknowledge and offer alternatives or pathways.",
+      assessment_relevance: "Tests holistic, family-centred planning." },
+    { id: "limited_followup", category: "context_access", severity: "major",
+      label: "Family has limited access to follow-up care",
+      compatible_with: { setting: ["ed", "community"] },
+      effect_on_simulation: "Caregiver discloses (if asked) that they have no regular GP, or live remotely, or cannot easily attend appointments. Affects safety-netting plan.",
+      assessment_relevance: "Tests practical, contextual safety-netting and care navigation." },
+
+    // ----- Situational -----
+    { id: "sibling_present", category: "situational", severity: "minor",
+      caregiver_focused: true,
+      label: "Sibling present and distracting",
+      compatible_with: { caregiver: ["distracted", "overwhelmed_grandparent"] },
+      effect_on_simulation: "A younger sibling is present and intermittently disrupts the caregiver's attention.",
+      assessment_relevance: "Tests ability to maintain focus and accommodate caregiver context." },
+    { id: "child_uncooperative", category: "situational", severity: "minor",
+      label: "Child crying or refusing examination",
+      compatible_with: { age: ["infant", "toddler"] },
+      effect_on_simulation: "Child is distressed and resists examination. Student must adapt approach (sit on caregiver's lap, distract, opportunistic examination).",
+      assessment_relevance: "Tests developmentally-appropriate examination technique." },
+    { id: "incomplete_med_info", category: "situational", severity: "minor",
+      caregiver_focused: true,
+      label: "Caregiver does not have complete medication information",
+      compatible_with: {},
+      effect_on_simulation: "Caregiver cannot recall medication names or doses precisely. Student must work around the gap (ask for photos, pharmacy contact, etc.).",
+      assessment_relevance: "Tests adaptability and use of alternative information sources." },
+
+    // ----- Safety / disclosure (placeholder, disabled) -----
+    { id: "PLACEHOLDER_safety_disclosure", category: "safety_disclosure", severity: "major",
+      label: "[PLACEHOLDER] Hidden safety or disclosure factor",
+      compatible_with: {},
+      effect_on_simulation: "Reserved for future expansion. Hidden safety issues require explicit feedback rubric support and agent training before activation.",
+      assessment_relevance: "Reserved.",
+      enabled: false }
+  ],
+
+  // ===========================================================================
+  // CHILD BEHAVIOUR — visible child presentation
+  // ===========================================================================
+
+  childBehaviours: [
+    { id: "clingy_tired", label: "clingy and tired, leaning on caregiver",
+      compatible_with: { age: ["infant", "toddler"] } },
+    { id: "irritable", label: "irritable, fidgety, hard to settle",
+      compatible_with: {} },
+    { id: "unusually_quiet", label: "unusually quiet for their age",
+      compatible_with: {} },
+    { id: "appropriate_alert", label: "alert and developmentally appropriate",
+      compatible_with: {}, weight: 2 },
+    { id: "withdrawn_cooperative", label: "withdrawn but cooperative",
+      compatible_with: { age: ["school_age", "adolescent"] } }
+  ],
+
+  // ===========================================================================
+  // CAREGIVER BACKSTORY — flavour detail combined with disposition
+  // ===========================================================================
+
+  caregiverBackstory: [
+    { id: "first_visit", label: "first visit to this service" },
+    { id: "shift_work", label: "has come straight from a night shift" },
+    { id: "healthcare_worker", label: "is a healthcare worker themselves in an unrelated field" },
+    { id: "older_relative", label: "is also caring for an older relative at home" },
+    { id: "researched_online", label: "has researched symptoms online before arriving" }
+  ],
+
+  // ===========================================================================
+  // RUBRIC — placeholder pending the real assignment rubric
+  // ===========================================================================
+
+  rubric: {
+    note: "PLACEHOLDER RUBRIC — to be replaced with the validated assignment rubric once finalised by Nursing colleagues.",
+    levels: ["Unsatisfactory", "Adequate", "Strong"],
+    categories: [
+      {
+        id: "therapeutic_communication",
+        label: "Therapeutic Communication and Rapport",
+        descriptors: {
+          unsatisfactory: "Did not establish rapport. Used jargon without explanation. Failed to attend to caregiver concerns or to the developmental level of the child.",
+          adequate: "Established basic rapport. Mostly used plain language. Acknowledged caregiver concerns but with limited depth or responsiveness.",
+          strong: "Built rapport quickly with both caregiver and child. Used developmentally-appropriate communication. Validated concerns and adapted approach to caregiver disposition."
+        }
+      },
+      {
+        id: "clinical_assessment",
+        label: "Clinical Assessment and Information Gathering",
+        descriptors: {
+          unsatisfactory: "History-taking incomplete or unsystematic. Missed key elements of the presenting complaint. Did not elicit relevant negatives or hidden information.",
+          adequate: "Covered most expected history elements. Some prompting required to surface key information. Examination focused on the presenting complaint.",
+          strong: "Systematic, efficient history-taking. Elicited hidden information through targeted questioning. Examination thorough and developmentally appropriate."
+        }
+      },
+      {
+        id: "clinical_reasoning",
+        label: "Clinical Reasoning, Prioritisation, and Safety",
+        descriptors: {
+          unsatisfactory: "Did not articulate a working differential. Failed to recognise red flags. Inappropriate or absent escalation.",
+          adequate: "Identified the likely diagnosis. Recognised obvious red flags. Escalation appropriate but may have lacked urgency or specificity.",
+          strong: "Articulated a defensible differential with reasoning. Recognised subtle red flags. Escalation timely, specific, and well-communicated."
+        }
+      },
+      {
+        id: "nursing_actions",
+        label: "Nursing Actions, Escalation, and Family-Centred Planning",
+        descriptors: {
+          unsatisfactory: "Did not provide safety-netting. Care plan ignored family context. No clear discharge or follow-up plan articulated.",
+          adequate: "Provided basic safety-netting. Care plan considered family circumstances. Follow-up plan present but generic.",
+          strong: "Specific, contextualised safety-netting tied to caregiver's likely understanding. Care plan responsive to family context, access barriers, and cultural considerations. Clear, individualised follow-up plan."
+        }
+      }
+    ]
+  }
+};
+
+// =============================================================================
+// Implementation — should not need editing for content changes.
+// =============================================================================
+
+// ---- PRNG ----
+function mulberry32(seed) {
+  return function() {
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---- Compatibility filtering ----
+function isCompatible(option, anchorIds) {
+  if (option.enabled === false) return false;
+  const cw = option.compatible_with || {};
+  for (const key in cw) {
+    const allowed = cw[key];
+    if (!allowed || allowed.length === 0) continue;
+    if (anchorIds[key] != null && !allowed.includes(anchorIds[key])) {
+      return false;
+    }
+  }
+  const ex = option.excludes || {};
+  for (const key in ex) {
+    if (anchorIds[key] != null && ex[key].includes(anchorIds[key])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function filterCompatible(pool, anchorIds) {
+  return pool.filter(opt => isCompatible(opt, anchorIds));
+}
+
+// ---- Weighted random pick ----
+function pickWeighted(pool, rand) {
+  if (pool.length === 0) return null;
+  const total = pool.reduce((s, o) => s + (o.weight || 1), 0);
+  let r = rand() * total;
+  for (const opt of pool) {
+    r -= (opt.weight || 1);
+    if (r <= 0) return opt;
+  }
+  return pool[pool.length - 1];
+}
+
+// ---- Deterministic shuffle ----
+function shuffleSeeded(arr, rand) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ---- Challenge factor allocation ----
+// Coherence rules enforced here:
+//   1. Per-category caps (clinical_max, communication_max, etc.) from budget
+//   2. Total factor cap from budget.total
+//   3. Major-factor cap from budget.major_max
+//   4. Caregiver-load cap (max 2 caregiver_focused factors per scenario)
+//   5. Diagnosis-factor incompatibility (diagnosis.incompatible_factors)
+//   6. clinical_required: ensure at least one clinical factor in challenging mode
+function selectChallenges(pool, budget, anchorIds, diagnosis, rand) {
+  // Cap on caregiver_focused factors. Stacking too many caregiver-facing
+  // complications makes the simulation feel punitive and unrealistic.
+  const CAREGIVER_FOCUSED_CAP = 2;
+
+  // Filter out factors the chosen diagnosis declares incompatible
+  const incompatibleFactorIds = (diagnosis && diagnosis.incompatible_factors) || [];
+  const compatible = filterCompatible(pool, anchorIds)
+    .filter(f => !incompatibleFactorIds.includes(f.id));
+
+  const selected = [];
+  const counts = {
+    clinical: 0, communication: 0, context_access: 0,
+    situational: 0, safety_disclosure: 0,
+    major: 0, caregiver_focused: 0
+  };
+  const shuffled = shuffleSeeded(compatible, rand);
+
+  for (const factor of shuffled) {
+    if (selected.length >= budget.total) break;
+    const cap = budget[`${factor.category}_max`];
+    if (cap !== undefined && counts[factor.category] >= cap) continue;
+    if (factor.severity === "major" && counts.major >= budget.major_max) continue;
+    if (factor.caregiver_focused && counts.caregiver_focused >= CAREGIVER_FOCUSED_CAP) continue;
+    selected.push(factor);
+    counts[factor.category]++;
+    if (factor.severity === "major") counts.major++;
+    if (factor.caregiver_focused) counts.caregiver_focused++;
+  }
+
+  // Ensure at least one clinical factor if difficulty requires it
+  if (budget.clinical_required && counts.clinical === 0) {
+    const clinicalPool = shuffleSeeded(
+      compatible.filter(f => f.category === "clinical" && !selected.some(s => s.id === f.id)),
+      rand
+    );
+    if (clinicalPool.length > 0) {
+      const replacement = clinicalPool[0];
+      // If at budget capacity, drop a non-clinical factor to make room
+      if (selected.length >= budget.total) {
+        const lastNonClinicalIdx = [...selected].reverse().findIndex(f => f.category !== "clinical");
+        if (lastNonClinicalIdx !== -1) {
+          selected.splice(selected.length - 1 - lastNonClinicalIdx, 1);
+        } else {
+          selected.pop();
+        }
+      }
+      selected.push(replacement);
+    }
+  }
+
+  return selected;
+}
+
+// ---- Build complete scenario from anchor IDs + seed ----
+function buildScenario(anchorIds, randSeed) {
+  const rand = mulberry32(randSeed);
+
+  const anchors = {};
+  SCENARIO_CONFIG.anchors.forEach(field => {
+    const opt = field.options.find(o => o.id === anchorIds[field.key]);
+    anchors[field.key] = opt;
+  });
+
+  const difficulty = anchors.difficulty;
+  const budget = difficulty.challenge_budget;
+
+  const compatibleDiagnoses = filterCompatible(SCENARIO_CONFIG.diagnoses, anchorIds);
+  const diagnosis = pickWeighted(compatibleDiagnoses, rand);
+
+  const severity = diagnosis ? diagnosis.severity_options[Math.floor(rand() * diagnosis.severity_options.length)] : "moderate";
+
+  // Pass diagnosis to selectChallenges for incompatible_factors filtering
+  const challengeFactors = selectChallenges(SCENARIO_CONFIG.challengeFactors, budget, anchorIds, diagnosis, rand);
+
+  const childBehaviour = pickWeighted(filterCompatible(SCENARIO_CONFIG.childBehaviours, anchorIds), rand);
+  const caregiverBackstory = pickWeighted(SCENARIO_CONFIG.caregiverBackstory, rand);
+
+  const subtleRedFlagActive = challengeFactors.some(c => c.id === "subtle_red_flag");
+  let redFlagsPresent = [];
+  let redFlagsAbsent = diagnosis ? diagnosis.red_flag_pool.slice() : [];
+  if (subtleRedFlagActive && diagnosis && diagnosis.red_flag_pool.length > 0) {
+    const flagIdx = Math.floor(rand() * diagnosis.red_flag_pool.length);
+    redFlagsPresent = [diagnosis.red_flag_pool[flagIdx]];
+    redFlagsAbsent = diagnosis.red_flag_pool.filter((_, i) => i !== flagIdx);
+  }
+
+  return {
+    anchors, diagnosis, severity, challengeFactors,
+    childBehaviour, caregiverBackstory,
+    redFlagsPresent, redFlagsAbsent,
+    budget, anchorIds
+  };
+}
+
+// ---- Document section builders ----
+function buildHeader(s) {
+  return `# SCENARIO BRIEF\n\n*${SCENARIO_CONFIG.meta.status}*`;
+}
+
+function buildMetadata(s, seedStr) {
+  const cf = s.challengeFactors.length > 0
+    ? s.challengeFactors.map(c => `${c.label} (${c.category}, ${c.severity})`).join("; ")
+    : "none";
+  return `## Scenario metadata
+
+- **Seed**: ${seedStr}
+- **Setting**: ${s.anchors.setting.label}
+- **Patient age**: ${s.anchors.age.label}
+- **Presenting complaint category**: ${s.anchors.complaint.label}
+- **Caregiver presentation**: ${s.anchors.caregiver.label}
+- **Difficulty**: ${s.anchors.difficulty.label}
+- **Challenge factors active**: ${cf}`;
+}
+
+function buildOpening(s) {
+  return `## Student-facing opening
+
+You are working in ${s.anchors.setting.scene}. ${s.anchors.caregiver.disposition_text}, who ${s.caregiverBackstory.label}, has brought ${s.anchors.age.description} in with ${s.anchors.complaint.caregiver_summary}.
+
+The child appears ${s.childBehaviour.label}.
+
+(The caregiver's exact opening line should be improvised by the agent, fitting the disposition and complaint above.)`;
+}
+
+function buildRolePlay(s) {
+  const lines = [];
+  lines.push(`## Role-play instructions for the agent\n`);
+  lines.push(`### Caregiver\n`);
+  lines.push(`${s.anchors.caregiver.disposition_text}, who ${s.caregiverBackstory.label}.`);
+  lines.push(`- **Initial cooperation tolerance**: ${s.anchors.caregiver.initial_tolerance} out of ${s.anchors.caregiver.tolerance_max}`);
+  lines.push(`- **Response rule**: ${s.anchors.caregiver.response_rules}`);
+  lines.push(`- **Adjust tolerance dynamically**: lower it when the student uses jargon without explanation, dismisses concerns, rushes, or asks dismissive questions. Raise it when the student validates concerns, explains in plain language, and demonstrates competence.\n`);
+
+  lines.push(`### Child\n`);
+  lines.push(`${s.anchors.age.developmental_notes}`);
+  lines.push(`Visible behaviour: ${s.childBehaviour.label}.\n`);
+
+  lines.push(`### Information disclosure rules\n`);
+  lines.push(`- **Volunteer freely**: the presenting complaint as summarised in the opening, plus any visible signs the student would obviously notice.`);
+  lines.push(`- **Reveal when directly asked**: history of present illness, past medical history, medications, allergies, immunisations, family and social history.`);
+  lines.push(`- **Reveal only if specifically probed**: details related to active challenge factors (see below).`);
+  lines.push(`- **Never volunteer directly**: the underlying diagnosis. Provide examination findings and test results realistically when the student requests them.`);
+
+  return lines.join("\n");
+}
+
+function buildClinicalInfo(s) {
+  if (!s.diagnosis) {
+    return `## Clinical information (hidden from student)\n\n*No compatible diagnosis was found for these anchor selections. This indicates a content gap in the diagnosis pool — please flag this to the project lead.*`;
+  }
+  const lines = [];
+  lines.push(`## Clinical information (hidden from student)\n`);
+  lines.push(`**Likely diagnosis**: ${s.diagnosis.label} (severity: ${s.severity})\n`);
+  lines.push(`**Hidden clinical logic**: ${s.diagnosis.hidden_clinical_logic}\n`);
+  lines.push(`**Relevant negatives the student should elicit**:`);
+  s.diagnosis.relevant_negatives.forEach(n => lines.push(`- ${n}`));
+  lines.push(``);
+  if (s.redFlagsPresent.length > 0) {
+    lines.push(`**Red flags present in this scenario** (only reveal if student examines or asks specifically):`);
+    s.redFlagsPresent.forEach(f => lines.push(`- ${f}`));
+  } else {
+    lines.push(`**Red flags present in this scenario**: none — this is a non-red-flag presentation. If asked, all red flags below are absent.`);
+  }
+  lines.push(``);
+  if (s.redFlagsAbsent.length > 0) {
+    lines.push(`**Red flags absent (relevant negatives if asked)**:`);
+    s.redFlagsAbsent.forEach(f => lines.push(`- ${f}`));
+    lines.push(``);
+  }
+  lines.push(`**Expected escalation pathway**: ${s.diagnosis.escalation_pathway}`);
+  return lines.join("\n");
+}
+
+function buildChallengeNotes(s) {
+  if (s.challengeFactors.length === 0) {
+    return `## Active challenge factors\n\nNone — this is a tutorial-level scenario with no complications.`;
+  }
+  const lines = [`## Active challenge factors\n`];
+  s.challengeFactors.forEach(f => {
+    lines.push(`### ${f.label}`);
+    lines.push(`- **Category**: ${f.category} (${f.severity})`);
+    lines.push(`- **How to portray**: ${f.effect_on_simulation}`);
+    lines.push(`- **What this is testing**: ${f.assessment_relevance}\n`);
+  });
+  return lines.join("\n");
+}
+
+function buildExpectedPerformance(s) {
+  const lines = [`## Expected student performance\n`];
+  lines.push(`The student should:`);
+  lines.push(`- Build appropriate rapport with the caregiver and engage with the child at their developmental level (${s.anchors.age.label}).`);
+  lines.push(`- Take a systematic history covering the presenting complaint, past medical history, medications, allergies, immunisations, and relevant family/social context.`);
+  if (s.diagnosis) {
+    s.diagnosis.feedback_focus.forEach(f => lines.push(`- Demonstrate competence in: ${f}.`));
+  }
+  s.challengeFactors.forEach(f => {
+    lines.push(`- Respond appropriately to the active challenge factor: ${f.label.toLowerCase()}.`);
+  });
+  lines.push(`- Articulate a working impression and a clear plan, including safety-netting and follow-up.`);
+  lines.push(`\n**Common omissions to watch for**: gaps in immunisation history, missing weight check (age-relevant), failure to ask about wet nappies / urine output, not checking the caregiver's understanding before ending.`);
+  if (s.redFlagsPresent.length > 0) {
+    lines.push(`\n**Critical omission to flag in feedback**: failure to surface or act on the red flag(s) present in this scenario (${s.redFlagsPresent.join("; ")}).`);
+  }
+  return lines.join("\n");
+}
+
+function buildSessionProtocol(s) {
+  const d = s.anchors.difficulty;
+  const lines = [`## Session protocol\n`];
+  lines.push(`### Exit conditions`);
+  lines.push(`- **Student commitment**: When the student articulates a diagnostic impression and a recommended action, confirm out-of-character ("Just to check — are you wrapping up the consultation here?") then proceed to debrief.`);
+  lines.push(`- **Caregiver tolerance breakdown**: If the caregiver's tolerance reaches zero, give one clear in-character warning ("I don't think you're listening to me" or similar). If the student does not course-correct, end the interaction realistically (caregiver leaves, refuses to continue, asks for someone else) and proceed to debrief framed around the communication failure.`);
+  lines.push(`- **Time-out**: After ${d.time_out.warning_at} student messages, give a brief out-of-character note that the session is running long. After ${d.time_out.hard_cap} student messages, terminate and proceed to debrief framed around efficiency and prioritisation.\n`);
+  lines.push(`### Difficulty scaffolding`);
+  lines.push(`- **Caregiver cooperation level**: ${d.scaffolding.caregiver_cooperation}`);
+  lines.push(`- **Feedback style**: ${d.scaffolding.feedback_style}`);
+  if (d.scaffolding.agent_meta_intro) {
+    lines.push(`- **Tutorial mode**: At session start, briefly explain that the student should type both what they would say and any actions or observations in parentheses. Do not lecture; one or two sentences.`);
+  }
+  if (d.scaffolding.prompt_for_actions) {
+    lines.push(`- **Tutorial mode**: For the first two student turns, if the student gives only dialogue with no parenthetical actions, gently prompt them to include them. Do not treat this as a clinical error.`);
+  }
+  return lines.join("\n");
+}
+
+function buildRubric(s) {
+  const r = SCENARIO_CONFIG.rubric;
+  const lines = [`## Formative feedback rubric\n`];
+  lines.push(`*${r.note}*\n`);
+  lines.push(`Score each category as one of: ${r.levels.join(" / ")}. Provide a brief justification with a quote or paraphrase from the student's interaction.\n`);
+  r.categories.forEach((cat, i) => {
+    lines.push(`### ${i + 1}. ${cat.label}`);
+    r.levels.forEach(level => {
+      const key = level.toLowerCase();
+      lines.push(`- **${level}**: ${cat.descriptors[key]}`);
+    });
+    lines.push(``);
+  });
+  lines.push(`After scoring, provide:`);
+  lines.push(`1. An overall summary (3–5 sentences).`);
+  lines.push(`2. Two or three specific, actionable suggestions for the student's next simulation.`);
+  lines.push(`3. The diagnosis and any hidden information the student did not surface during the session.`);
+  return lines.join("\n");
+}
+
+function buildDocument(scenario, seedStr) {
+  return [
+    buildHeader(scenario),
+    buildMetadata(scenario, seedStr),
+    buildOpening(scenario),
+    buildRolePlay(scenario),
+    buildClinicalInfo(scenario),
+    buildChallengeNotes(scenario),
+    buildExpectedPerformance(scenario),
+    buildSessionProtocol(scenario),
+    buildRubric(scenario)
+  ].join("\n\n");
+}
+
+// =============================================================================
+// UI / form / seed handling
+// =============================================================================
+
+let currentScenario = null;
+let currentSeedStr = null;
+let currentDocument = null;
+
+function buildForm() {
+  document.getElementById('appTitle').textContent = SCENARIO_CONFIG.meta.title;
+  document.getElementById('appSubtitle').textContent = SCENARIO_CONFIG.meta.subtitle;
+  document.title = SCENARIO_CONFIG.meta.title;
+
+  const formContainer = document.getElementById('formFields');
+  formContainer.innerHTML = '';
+
+  SCENARIO_CONFIG.anchors.forEach(field => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'field';
+
+    const label = document.createElement('label');
+    label.htmlFor = `field-${field.key}`;
+    label.textContent = field.label;
+
+    const select = document.createElement('select');
+    select.id = `field-${field.key}`;
+    select.dataset.key = field.key;
+
+    field.options.forEach((opt, optIdx) => {
+      const option = document.createElement('option');
+      option.value = optIdx;
+      option.textContent = opt.label;
+      select.appendChild(option);
+    });
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(select);
+    formContainer.appendChild(wrapper);
+  });
+}
+
+function getAnchorIndices() {
+  return SCENARIO_CONFIG.anchors.map(field => {
+    const select = document.getElementById(`field-${field.key}`);
+    return parseInt(select.value, 10);
+  });
+}
+
+function setAnchorIndices(indices) {
+  SCENARIO_CONFIG.anchors.forEach((field, i) => {
+    const select = document.getElementById(`field-${field.key}`);
+    if (select && indices[i] != null) {
+      select.value = indices[i];
+    }
+  });
+}
+
+function indicesToAnchorIds(indices) {
+  const anchorIds = {};
+  SCENARIO_CONFIG.anchors.forEach((field, i) => {
+    anchorIds[field.key] = field.options[indices[i]].id;
+  });
+  return anchorIds;
+}
+
+// Seed format: s3-{idx1}-{idx2}-...-{idxN}-r{randSeed}
+// Bumped from s2 to s3 because v0.3 challenge selection logic changed.
+function encodeSeed(indices, randSeed) {
+  return `s3-${indices.join('-')}-r${randSeed}`;
+}
+
+function decodeSeed(str) {
+  const m = str.trim().match(/^s3-((?:\d+-)+)r(\d+)$/);
+  if (!m) return null;
+  const indices = m[1].split('-').filter(s => s !== '').map(s => parseInt(s, 10));
+  const randSeed = parseInt(m[2], 10);
+  if (indices.length !== SCENARIO_CONFIG.anchors.length) return null;
+  for (let i = 0; i < indices.length; i++) {
+    if (indices[i] < 0 || indices[i] >= SCENARIO_CONFIG.anchors[i].options.length) return null;
+  }
+  return { indices, randSeed };
+}
+
+function generate(indices, randSeed) {
+  const anchorIds = indicesToAnchorIds(indices);
+  const scenario = buildScenario(anchorIds, randSeed);
+  const seedStr = encodeSeed(indices, randSeed);
+  const docText = buildDocument(scenario, seedStr);
+
+  currentScenario = scenario;
+  currentSeedStr = seedStr;
+  currentDocument = docText;
+
+  document.getElementById('seedDisplay').style.display = 'block';
+  document.getElementById('seedValue').textContent = seedStr;
+  document.getElementById('previewBox').textContent = docText;
+  document.getElementById('downloadBtn').disabled = false;
+  const status = document.getElementById('statusMsg');
+  status.style.color = 'var(--good)';
+  status.textContent = 'Scenario generated. You can download the file or copy the seed below.';
+}
+
+function handleGenerate() {
+  const indices = getAnchorIndices();
+  const randSeed = Math.floor(Math.random() * 1000000);
+  generate(indices, randSeed);
+}
+
+function handleLoadSeed() {
+  const decoded = decodeSeed(document.getElementById('seedInput').value);
+  const status = document.getElementById('statusMsg');
+  if (!decoded) {
+    status.style.color = 'var(--warn)';
+    status.textContent = 'Invalid seed format. Expected something like s3-1-2-0-3-2-r847291. (Note: v0.2 seeds with prefix "s2-" no longer work.)';
+    return;
+  }
+  setAnchorIndices(decoded.indices);
+  generate(decoded.indices, decoded.randSeed);
+  status.style.color = 'var(--good)';
+  status.textContent = 'Seed loaded — scenario reproduced exactly.';
+}
+
+function handleDownload() {
+  if (!currentDocument) return;
+  const blob = new Blob([currentDocument], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `simulation_${currentSeedStr}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+buildForm();
+document.getElementById('generateBtn').addEventListener('click', handleGenerate);
+document.getElementById('downloadBtn').addEventListener('click', handleDownload);
+document.getElementById('loadSeedBtn').addEventListener('click', handleLoadSeed);
+</script>
+</body>
+</html>
