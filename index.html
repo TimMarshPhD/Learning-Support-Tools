@@ -1,47 +1,23 @@
 <!--
   =============================================================================
   CFHN CONSULTATION SCENARIO GENERATOR — WSU branded
-  Version 1.0 — Australian English spelling, official WSU maroon hex (#A71D2A)
+  Version 2.0 (tiered content model) — Australian English, WSU maroon #A71D2A
   =============================================================================
-  Single-file embeddable tool implementing the CFHN Consultation Framework v1.0
-  and emitting training documents compatible with Simulation Agent v0.4.
+  Emits a Training Document (Section 0-7) compatible with the Nursing Scenario
+  Simulator (Copilot Agent). This version implements the three-tier model:
 
-  ARCHITECTURE
-  - Five user-selected anchors:
-      visit_type, complexity_profile, family_composition,
-      cultural_context, seed_string (optional)
-  - Content pools (surveillance opportunities, anticipatory guidance
-    opportunities, psychosocial signals) carry compatibility tags by
-    visit_type. Selection is constrained by complexity_profile budgets.
-  - Output is a .txt file containing the Training Document — Section 0
-    (Agent operating procedure, mostly boilerplate) plus seven scenario-
-    specific sections.
-  - Seeded deterministic generation: same anchors + same seed = same brief.
-    A Mulberry32 PRNG is seeded from a hash of the anchor inputs and seed
-    string; the resolved seed is shown in the brief's Section 1 metadata.
+    Tier 0  visit type + complexity + family composition + CALD context (UI)
+    Tier 1  four draw-sources rolled against PER-TRACK budget caps:
+              clinical issues / family-comp / CALD / all-purpose
+    Tier 2  every surveillance domain is PRESENT; most present as normal-range
+              (brushed past), a budgeted few present as ISSUES drawing a
+              specific PROBLEM from a sub-pool (N=1 today, built for N>1)
 
-  CONTENT SCOPE — PROTOTYPE EARLY BUILD
-  Three visit types: 1–4 week postnatal home visit, 6–8 week universal
-  check, 6-month universal check. Only the 6–8 week content is colleague-
-  validated (via the Amika scenario); the other two visit types are
-  prototype-only, awaiting clinical sign-off.
-
-  Three family compositions: mother only, both parents, single father.
-  Three cultural contexts: generalist Anglo-Australian, generalist
-  Vietnamese-Australian first generation, Aboriginal/Torres Strait
-  Islander family (requires cultural review before student use).
-
-  Four complexity profiles: Tutorial, Straightforward, Moderate, Complex.
-
-  COHERENCE RULES (encoded in the engine)
-  - Surveillance opportunities filtered by visit_type compatibility
-  - Anticipatory guidance opportunities filtered by visit_type
-  - Psychosocial signals filtered by family_composition where relevant
-  - Complexity budget caps the number of items selected per category
-  - Visit-mandatory content is always included regardless of complexity
-
-  BRANDING NOTE: The W shield in the header is the official WSU asset
-  (cropped viewBox to fit layout; path data preserved from prototype).
+  CONTENT: the colleagues' 1-4 week check material, decomposed across the
+  seven surveillance domains. Severity, normal-range text and hint cascades
+  are Claude-drafted and still pending clinical sign-off (noted in-brief).
+  Complication entries flagged placeholder are scaffold only and are NEVER
+  selected into a student-facing brief.
   =============================================================================
 -->
 <!DOCTYPE html>
@@ -54,370 +30,93 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --maroon: #A71D2A;
-    --maroon-dark: #7A1520;
-    --maroon-soft: #f5e6e8;
-    --maroon-tint: #fbf2f3;
-    --bg: #f5f5f3;
-    --panel: #ffffff;
-    --ink: #1a1a1a;
-    --ink-soft: #4a4a4a;
-    --ink-faint: #6a6a6a;
-    --border: #d8d8d4;
-    --border-soft: #ececea;
+  :root{
+    --maroon:#A71D2A; --maroon-dark:#7A1520; --maroon-soft:#f5e6e8; --maroon-tint:#fbf2f3;
+    --bg:#f5f5f3; --panel:#ffffff; --ink:#1a1a1a; --ink-soft:#4a4a4a; --ink-faint:#6a6a6a;
+    --border:#d8d8d4; --border-soft:#ececea;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: 'Open Sans', sans-serif;
-    font-weight: 400;
-    background: var(--bg);
-    color: var(--ink);
-    line-height: 1.5;
-  }
-  header {
-    background: var(--maroon);
-    color: white;
-    padding: 24px 32px 22px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-  }
-  .header-text { flex: 1; min-width: 0; }
-  h1 {
-    margin: 0 0 4px;
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-  }
-  .lede {
-    margin: 0;
-    font-size: 13px;
-    font-weight: 400;
-    opacity: 0.92;
-  }
-  .brand-logo {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    flex-shrink: 0;
-  }
-  .wordmark-main, .wordmark-sub {
-    font-weight: 700;
-    color: white;
-    line-height: 1.1;
-    letter-spacing: 0.04em;
-    font-size: 12px;
-    text-align: right;
-  }
-  .wordmark-sub { font-size: 10px; opacity: 0.9; }
-  .wordmark-block {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-  .shield {
-    width: 36px;
-    height: 44px;
-    flex-shrink: 0;
-  }
-  main {
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 24px 28px 60px;
-  }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 22px 26px;
-    margin-bottom: 22px;
-  }
-  .panel h2 {
-    margin: 0 0 4px;
-    font-size: 15px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--maroon);
-  }
-  .panel-blurb {
-    margin: 0 0 18px;
-    font-size: 13px;
-    color: var(--ink-soft);
-  }
-  .controls-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 16px 20px;
-    margin-bottom: 18px;
-  }
-  .control-field {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
-  .control-field label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--ink-soft);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .control-field .hint {
-    font-size: 11px;
-    font-weight: 400;
-    color: var(--ink-faint);
-    text-transform: none;
-    letter-spacing: 0;
-    margin-top: -2px;
-  }
-  select, input[type="text"] {
-    width: 100%;
-    padding: 9px 11px;
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    background: white;
-    font-size: 14px;
-    font-family: 'Open Sans', sans-serif;
-    font-weight: 400;
-    color: var(--ink);
-  }
-  select:focus, input[type="text"]:focus {
-    outline: none;
-    border-color: var(--maroon);
-    box-shadow: 0 0 0 2px var(--maroon-soft);
-  }
-  .button-row {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-top: 6px;
-    align-items: center;
-  }
-  button {
-    padding: 11px 22px;
-    border: 1px solid var(--maroon);
-    background: var(--maroon);
-    color: white;
-    border-radius: 2px;
-    font-size: 12px;
-    font-family: 'Open Sans', sans-serif;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    cursor: pointer;
-  }
-  button:hover {
-    background: var(--maroon-dark);
-    border-color: var(--maroon-dark);
-  }
-  button.secondary {
-    background: white;
-    color: var(--maroon);
-  }
-  button.secondary:hover {
-    background: var(--maroon-soft);
-  }
-  button:disabled {
-    background: var(--border);
-    border-color: var(--border);
-    color: var(--ink-faint);
-    cursor: not-allowed;
-  }
-  .status-line {
-    font-size: 12px;
-    color: var(--ink-faint);
-    margin-left: 8px;
-  }
-  .status-line.success { color: #1f6f3a; }
-  .status-line.warn    { color: #a06200; }
-  .review-flag {
-    margin-top: 12px;
-    padding: 10px 14px;
-    border-left: 3px solid #a06200;
-    background: #fcf4e3;
-    font-size: 12px;
-    color: #5a4200;
-    border-radius: 0 2px 2px 0;
-    display: none;
-  }
-  .review-flag.show { display: block; }
-  .gen-report {
-    margin-top: 16px;
-    padding: 12px 14px;
-    background: var(--maroon-tint);
-    border: 1px solid var(--maroon-soft);
-    border-radius: 2px;
-    display: none;
-    font-family: 'SF Mono', 'Consolas', 'Liberation Mono', monospace;
-    font-size: 12px;
-    line-height: 1.7;
-    color: var(--ink-soft);
-    user-select: text;
-  }
-  .gen-report.show { display: block; }
-  .gen-report .gr-label {
-    font-weight: 700;
-    color: var(--maroon-dark);
-    margin-right: 6px;
-  }
-  .gen-report .gr-line {
-    word-break: break-all;
-  }
-  details.preview-details {
-    margin: 0;
-    padding: 0;
-  }
-  details.preview-details > summary {
-    list-style: none;
-    cursor: pointer;
-    padding: 14px 18px;
-    background: var(--maroon-tint);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ink-soft);
-    transition: background 0.15s;
-  }
-  details.preview-details > summary:hover {
-    background: var(--maroon-soft);
-  }
-  details.preview-details > summary::-webkit-details-marker { display: none; }
-  details.preview-details > summary::before {
-    content: '▶';
-    font-size: 10px;
-    color: var(--maroon);
-    margin-right: 8px;
-    transition: transform 0.15s;
-    display: inline-block;
-  }
-  details.preview-details[open] > summary::before {
-    transform: rotate(90deg);
-  }
-  details.preview-details > summary .summary-label {
-    flex: 1;
-  }
-  details.preview-details > summary .summary-status {
-    font-size: 11px;
-    font-weight: 400;
-    color: var(--ink-faint);
-    font-family: 'SF Mono', 'Consolas', monospace;
-  }
-  .preview {
-    background: #faf9f6;
-    border: 1px solid var(--border);
-    border-top: none;
-    border-radius: 0 0 2px 2px;
-    padding: 18px 22px;
-    font-family: 'SF Mono', 'Consolas', 'Liberation Mono', monospace;
-    font-size: 12.5px;
-    line-height: 1.55;
-    color: var(--ink);
-    white-space: pre-wrap;
-    max-height: 640px;
-    overflow-y: auto;
-  }
-  .preview.empty {
-    color: var(--ink-faint);
-    font-style: italic;
-    font-family: 'Open Sans', sans-serif;
-    text-align: center;
-    padding: 50px 20px;
-  }
-  footer {
-    text-align: center;
-    font-size: 11px;
-    color: var(--ink-faint);
-    padding: 20px;
-    border-top: 1px solid var(--border-soft);
-  }
-  footer code {
-    font-size: 11px;
-    background: var(--border-soft);
-    padding: 1px 6px;
-    border-radius: 2px;
-  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Open Sans',sans-serif;font-weight:400;background:var(--bg);color:var(--ink);line-height:1.5;}
+  header{background:var(--maroon);color:#fff;padding:24px 32px 22px;display:flex;align-items:center;justify-content:space-between;gap:24px;}
+  .header-text{flex:1;min-width:0;}
+  h1{margin:0 0 4px;font-size:22px;font-weight:700;letter-spacing:.01em;}
+  .lede{margin:0;font-size:13px;opacity:.92;}
+  .brand-logo{display:flex;align-items:center;gap:14px;flex-shrink:0;}
+  .wordmark-main,.wordmark-sub{font-weight:700;color:#fff;line-height:1.1;letter-spacing:.04em;font-size:12px;text-align:right;}
+  .wordmark-sub{font-size:10px;opacity:.9;}
+  .wordmark-block{display:flex;flex-direction:column;justify-content:center;}
+  .shield{width:36px;height:44px;flex-shrink:0;}
+  main{max-width:1280px;margin:0 auto;padding:24px 28px 60px;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:22px 26px;margin-bottom:22px;}
+  .panel h2{margin:0 0 4px;font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--maroon);}
+  .panel-blurb{margin:0 0 18px;font-size:13px;color:var(--ink-soft);}
+  .controls-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px 20px;margin-bottom:18px;}
+  .control-field{display:flex;flex-direction:column;gap:5px;}
+  .control-field label{font-size:12px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
+  .control-field .hint{font-size:11px;color:var(--ink-faint);margin-top:-2px;}
+  select,input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:2px;background:#fff;font-size:14px;font-family:'Open Sans',sans-serif;color:var(--ink);}
+  select:focus,input:focus{outline:none;border-color:var(--maroon);box-shadow:0 0 0 2px var(--maroon-soft);}
+  .button-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;align-items:center;}
+  button{padding:11px 22px;border:1px solid var(--maroon);background:var(--maroon);color:#fff;border-radius:2px;font-size:12px;font-family:'Open Sans',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;}
+  button:hover{background:var(--maroon-dark);border-color:var(--maroon-dark);}
+  button.secondary{background:#fff;color:var(--maroon);}
+  button.secondary:hover{background:var(--maroon-soft);}
+  button:disabled{background:var(--border);border-color:var(--border);color:var(--ink-faint);cursor:not-allowed;}
+  .status-line{font-size:12px;color:var(--ink-faint);margin-left:8px;}
+  .status-line.success{color:#1f6f3a;} .status-line.warn{color:#a06200;}
+  .review-flag{margin-top:12px;padding:10px 14px;border-left:3px solid #a06200;background:#fcf4e3;font-size:12px;color:#5a4200;border-radius:0 2px 2px 0;display:none;}
+  .review-flag.show{display:block;}
+  .gen-report{margin-top:16px;padding:12px 14px;background:var(--maroon-tint);border:1px solid var(--maroon-soft);border-radius:2px;display:none;font-family:'SF Mono','Consolas','Liberation Mono',monospace;font-size:12px;line-height:1.7;color:var(--ink-soft);}
+  .gen-report.show{display:block;}
+  .gen-report .gr-label{font-weight:700;color:var(--maroon-dark);margin-right:6px;}
+  .gen-report .gr-line{word-break:break-all;}
+  details.preview-details>summary{list-style:none;cursor:pointer;padding:14px 18px;background:var(--maroon-tint);border:1px solid var(--border);border-radius:2px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:13px;font-weight:600;color:var(--ink-soft);}
+  details.preview-details>summary:hover{background:var(--maroon-soft);}
+  details.preview-details>summary::-webkit-details-marker{display:none;}
+  details.preview-details>summary::before{content:'\25B6';font-size:10px;color:var(--maroon);margin-right:8px;transition:transform .15s;display:inline-block;}
+  details.preview-details[open]>summary::before{transform:rotate(90deg);}
+  details.preview-details>summary .summary-label{flex:1;}
+  details.preview-details>summary .summary-status{font-size:11px;font-weight:400;color:var(--ink-faint);font-family:'SF Mono','Consolas',monospace;}
+  .preview{background:#faf9f6;border:1px solid var(--border);border-top:none;border-radius:0 0 2px 2px;padding:18px 22px;font-family:'SF Mono','Consolas','Liberation Mono',monospace;font-size:12.5px;line-height:1.55;color:var(--ink);white-space:pre-wrap;max-height:640px;overflow-y:auto;}
+  .preview.empty{color:var(--ink-faint);font-style:italic;font-family:'Open Sans',sans-serif;text-align:center;padding:50px 20px;}
+  footer{text-align:center;font-size:11px;color:var(--ink-faint);padding:20px;border-top:1px solid var(--border-soft);}
+  footer code{font-size:11px;background:var(--border-soft);padding:1px 6px;border-radius:2px;}
 </style>
 </head>
 <body>
-
 <header>
   <div class="header-text">
     <h1>CFHN Consultation Scenario Generator</h1>
     <p class="lede">Generates training documents for the Nursing Scenario Simulator (Copilot Agent)</p>
   </div>
   <div class="brand-logo" aria-label="Western Sydney University">
-    <div class="wordmark-block">
-      <div class="wordmark-main">WESTERN SYDNEY</div>
-      <div class="wordmark-sub">UNIVERSITY</div>
-    </div>
-    <svg class="shield" xmlns="http://www.w3.org/2000/svg" viewBox="53 15 106 132" role="img" aria-label="Western Sydney University shield">
-      <path fill="#ffffff" fill-rule="evenodd" d="
-        M55 17 H157 V96
-        C157 107 151 116 141 124
-        C132 132 119 139 106 145
-        C93 139 80 132 71 124
-        C61 116 55 107 55 96
-        V17 Z
-        M65 39
-        L67 36 H74
-        L77 39
-        L88 88
-        L102 36 H109
-        L111 38
-        L123 88
-        L134 39
-        L137 36 H144
-        L146 38
-        L129 107
-        L115 102
-        L106 61
-        L96 102
-        L84 107
-        L81 106
-        L65 39 Z
-      "/>
+    <div class="wordmark-block"><div class="wordmark-main">WESTERN SYDNEY</div><div class="wordmark-sub">UNIVERSITY</div></div>
+    <svg class="shield" xmlns="http://www.w3.org/2000/svg" viewBox="53 15 106 132" role="img" aria-label="WSU shield">
+      <path fill="#fff" fill-rule="evenodd" d="M55 17 H157 V96 C157 107 151 116 141 124 C132 132 119 139 106 145 C93 139 80 132 71 124 C61 116 55 107 55 96 V17 Z M65 39 L67 36 H74 L77 39 L88 88 L102 36 H109 L111 38 L123 88 L134 39 L137 36 H144 L146 38 L129 107 L115 102 L106 61 L96 102 L84 107 L81 106 L65 39 Z"/>
     </svg>
   </div>
 </header>
 
 <main>
-
   <div class="panel">
     <h2>Scenario anchors</h2>
-    <p class="panel-blurb">Select the consultation parameters. The generator composes a training document consistent with these anchors; the same anchors plus the same seed will always produce the same brief.</p>
-
+    <p class="panel-blurb">Select the consultation parameters and generate a training document. The same anchors plus the same seed always produce the same brief. Paste the document into the Simulator agent to run the consultation.</p>
     <div class="controls-grid">
-
       <div class="control-field">
         <label for="visitType">Visit type</label>
-        <select id="visitType">
-          <option value="postnatal_home">1–4 week postnatal home visit</option>
-          <option value="six_eight_week" selected>6–8 week universal check</option>
-          <option value="six_month">6-month universal check</option>
-        </select>
+        <select id="visitType"><option value="postnatal_home" selected>1–4 week check (postnatal home visit)</option><option value="six_eight_week">6–8 week universal check</option><option value="six_month">6-month universal check</option></select>
         <span class="hint">Primary anchor — determines mandatory content.</span>
       </div>
-
       <div class="control-field">
         <label for="complexity">Complexity profile</label>
         <select id="complexity">
           <option value="tutorial">Tutorial</option>
-          <option value="straightforward">Straightforward</option>
-          <option value="moderate" selected>Moderate</option>
+          <option value="standard" selected>Standard</option>
+          <option value="moderate">Moderate</option>
           <option value="complex">Complex</option>
         </select>
-        <span class="hint">Budget for surveillance, signals, hint framing.</span>
+        <span class="hint">Per-track budget for issues and complicating factors.</span>
       </div>
-
       <div class="control-field">
         <label for="familyComp">Family composition</label>
         <select id="familyComp">
@@ -427,7 +126,6 @@
         </select>
         <span class="hint">Who is in the room for this consultation.</span>
       </div>
-
       <div class="control-field">
         <label for="culturalContext">Cultural / linguistic context</label>
         <select id="culturalContext">
@@ -437,26 +135,21 @@
         </select>
         <span class="hint">Cultural texture for portrayal.</span>
       </div>
-
       <div class="control-field">
         <label for="seedInput">Seed (optional)</label>
-        <input type="text" id="seedInput" placeholder="e.g. amika_canonical_001" maxlength="60">
+        <input type="text" id="seedInput" placeholder="e.g. week1_standard_001" maxlength="60">
         <span class="hint">Leave blank to derive from anchors. Same seed = same brief.</span>
       </div>
-
     </div>
-
     <div class="button-row">
       <button id="generateBtn">Generate scenario</button>
       <button id="copyBtn" class="secondary" disabled>Copy to clipboard</button>
       <button id="downloadBtn" class="secondary" disabled>Download .txt</button>
       <span id="statusLine" class="status-line"></span>
     </div>
-
     <div id="reviewFlag" class="review-flag">
-      <strong>Cultural review required.</strong> This cultural context requires sign-off from a clinical educator with Aboriginal/Torres Strait Islander cultural competency review responsibility before use with students. The generated brief is marked as prototype/review-pending.
+      <strong>Cultural review required.</strong> This cultural context needs sign-off from a clinical educator with Aboriginal/Torres Strait Islander cultural competency review responsibility before use with students. The generated brief is marked review-pending and uses placeholder names.
     </div>
-
     <div id="genReport" class="gen-report">
       <div class="gr-line"><span class="gr-label">Seed:</span><span id="grSeed"></span></div>
       <div class="gr-line"><span class="gr-label">Anchors:</span><span id="grAnchors"></span></div>
@@ -470,120 +163,30 @@
         <span class="summary-label">Generated training document</span>
         <span class="summary-status" id="summaryStatus">No scenario generated yet</span>
       </summary>
-      <div class="preview empty" id="previewBox">No scenario generated yet. Select anchors above and click Generate.</div>
+      <div class="preview empty" id="previewBox">No scenario generated yet. Select anchors above and click Generate scenario.</div>
     </details>
   </div>
-
 </main>
 
-<footer>
-  CFHN Consultation Scenario Generator v1.0 &nbsp;·&nbsp; Output compatible with the Nursing Scenario Simulator (Copilot Agent) &nbsp;·&nbsp; Western Sydney University, School of Nursing and Midwifery
-</footer>
+<footer>CFHN Consultation Scenario Generator v2.0 &nbsp;·&nbsp; tiered content model &nbsp;·&nbsp; output compatible with the Nursing Scenario Simulator (Copilot Agent) &nbsp;·&nbsp; Western Sydney University, School of Nursing and Midwifery</footer>
 
 <script>
-/* =========================================================================
-   SEEDED PRNG (Mulberry32)
-   ========================================================================= */
-function mulberry32(seed) {
-  return function() {
-    seed = (seed + 0x6D2B79F5) | 0;
-    let t = seed;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function hashStringTo32(str) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return h >>> 0;
-}
-function rngFromInputs(anchors, seedStr) {
-  const combined = [
-    anchors.visit_type,
-    anchors.complexity_profile,
-    anchors.family_composition,
-    anchors.cultural_context,
-    seedStr || ''
-  ].join('|');
-  return mulberry32(hashStringTo32(combined));
-}
-function rngPick(rng, arr) {
-  if (!arr || arr.length === 0) return null;
-  return arr[Math.floor(rng() * arr.length)];
-}
-function rngShuffle(rng, arr) {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+/* ===================== seeded PRNG ===================== */
+function mulberry32(seed){return function(){seed=(seed+0x6D2B79F5)|0;let t=seed;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};}
+function hashStringTo32(str){let h=2166136261>>>0;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h>>>0;}
+function rngFromInputs(a,s){return mulberry32(hashStringTo32([a.visit_type,a.complexity_profile,a.family_composition,a.cultural_context,s||''].join('|')));}
+function rngPick(rng,arr){return(!arr||!arr.length)?null:arr[Math.floor(rng()*arr.length)];}
+function rngShuffle(rng,arr){const a=arr.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
-/* =========================================================================
-   COMPLEXITY BUDGETS
-   ========================================================================= */
-const COMPLEXITY_BUDGETS = {
-  tutorial: {
-    label: 'Tutorial',
-    surveillance_major_max: 0,
-    surveillance_minor_max: 1,
-    psychosocial_signal_max: 0,
-    ago_max: 2,
-    parent_forthcomingness: 'high',
-    hint_framing: 'ooc',
-    description: 'Tutorial mode. Parent is forthcoming. Hints, if needed, surface out-of-character. Focus on consultation rhythm and interface familiarisation.'
-  },
-  straightforward: {
-    label: 'Straightforward',
-    surveillance_major_max: 1,
-    surveillance_minor_max: 1,
-    psychosocial_signal_max: 0,
-    ago_max: 3,
-    parent_forthcomingness: 'normal',
-    hint_framing: 'in_character',
-    description: 'Standard universal-service consultation. One major clinical opportunity, routine anticipatory guidance, no significant psychosocial signal.'
-  },
-  moderate: {
-    label: 'Moderate',
-    surveillance_major_max: 1,
-    surveillance_minor_max: 2,
-    psychosocial_signal_max: 1,
-    ago_max: 4,
-    parent_forthcomingness: 'normal',
-    hint_framing: 'in_character',
-    description: 'Routine consultation with one subtle psychosocial signal alongside the clinical content. The student must integrate domains.'
-  },
-  complex: {
-    label: 'Complex',
-    surveillance_major_max: 2,
-    surveillance_minor_max: 2,
-    psychosocial_signal_max: 2,
-    ago_max: 4,
-    parent_forthcomingness: 'guarded',
-    hint_framing: 'in_character',
-    description: 'Higher-load consultation. Multiple intersecting clinical and psychosocial concerns; partnership posture under sustained pressure.'
-  }
-};
-
-/* =========================================================================
-   VISIT TYPE DEFINITIONS
-   ========================================================================= */
-const VISIT_TYPES = {
-  postnatal_home: {
-    label: '1–4 week postnatal home visit',
-    age_label: '2 weeks old',
-    age_weeks: 2,
-    service_model: 'Universal CFHN postnatal home visit',
-    setting: "Family's home (NSW)",
-    blue_book_age: '1-4 weeks',
-    visit_mandatory: [
+/* ===================== Tier 0: visit type ===================== */
+const VISIT_TYPES={
+  postnatal_home:{
+    id:'postnatal_home',label:'1\u20134 week check',age_label:'2\u20133 weeks old',age_weeks:3,
+    service_model:'Universal CFHN postnatal home visit',setting:"Family's home (NSW)",blue_book_age:'1-4 weeks',
+    domains:['safe_sleeping','feeding','hearing','infant_settling','infant_vision','social_interaction','physiological_skin'],
+    visit_mandatory:[
       'Maternal physical recovery check (general)',
-      'Maternal mental health check-in / EPDS opportunity',
+      'Maternal/parental mental health check-in / EPDS opportunity',
       'Infant feeding assessment (lactation observation if breastfeeding)',
       'Infant weight check / weight regain to birth weight',
       'Safe sleep environment observation in the home',
@@ -591,1322 +194,755 @@ const VISIT_TYPES = {
       'Identification of family support and community resources',
       'Plan for ongoing CFHN engagement and next visit'
     ],
-    default_parent_concerns: [
-      'Feeding establishment and concerns about supply or latch',
-      'Settling and sleep — uncertainty about normal newborn patterns',
-      'Maternal physical recovery and self-care'
-    ],
-    prototype_note: 'PROTOTYPE — postnatal home visit content awaiting clinical sign-off',
-    age_specific_portrayal: 'Newborn behaviour: predominantly sleeping; feeding cues; alert states brief; reflexes prominent (rooting, sucking, Moro); umbilical stump may still be present or recently separated.'
+    age_specific_portrayal:'Newborn behaviour: predominantly sleeping; brief alert states; feeds on cue; reflexes prominent (rooting, sucking, Moro); focuses best ~20 cm and is drawn to faces; startles or stills to loud sound; communicates by crying; umbilical stump recently separated.'
   },
-  six_eight_week: {
-    label: '6–8 week universal check',
-    age_label: '6 weeks old',
-    age_weeks: 6,
-    service_model: 'Universal CFHN clinic visit',
-    setting: 'Community Health Centre clinic room (NSW)',
-    blue_book_age: '6-8 weeks',
-    visit_mandatory: [
-      'Growth measurement (weight, length, head circumference) and longitudinal interpretation',
-      'Feeding assessment',
-      'Developmental surveillance for the 6–8 week milestone set',
-      'Tummy time / motor development discussion',
-      'Safe sleep messaging and environment confirmation',
-      'Immunisation discussion (6/8 week schedule)',
-      'Maternal/parental wellbeing check-in',
-      'Plan for follow-up and next universal check'
+  six_eight_week:{
+    id:'six_eight_week',label:'6\u20138 week universal check',age_label:'6 weeks old',age_weeks:6,
+    service_model:'Universal CFHN clinic visit',setting:'Community Health Centre clinic room (NSW)',blue_book_age:'6-8 weeks',
+    domains:['motor_6_8','skin_6_8','feeding_6_8','development_6_8','safe_sleep_6_8'],
+    mandatory_guidance:[
+      {label:'Immunisation due at 6\u20138 weeks',content:'Schedule per the Australian Immunisation Handbook; usually administered at the GP; expected reactions (mild fever, fussiness) and their management; when to seek review.'},
+      {label:'Safe sleep messaging',content:'Red Nose recommendations \u2014 back, firm flat surface, safe cot, smoke-free, face uncovered. Confirm the current arrangement is safe and reinforce.'},
+      {label:'Responsive caregiving and play',content:'Serve-and-return interaction, narrating daily activities, simple songs, age-appropriate visual books, following the infant\u2019s cues. Frame the relationship itself as the developmental substrate.'},
+      {label:'Parental wellbeing check-in',content:'Physical recovery, emotional adjustment, sleep and self-care; distinguishing normal adjustment from postnatal depression/anxiety; partner and family support.'}
     ],
-    default_parent_concerns: [
-      'Reassurance about growth and feeding adequacy',
-      'Developmental progress relative to age expectations',
-      'Anticipatory guidance about responsive caregiving and play'
-    ],
-    prototype_note: null,
-    age_specific_portrayal: '6-week-old behaviour: alert periods lengthening; tracks faces and voices intermittently; social smile may emerge; head lag still common; tummy time aversion common; brisk reflexes; settled in arms.'
+    age_specific_portrayal:'6-week-old behaviour: alert periods lengthening; tracks faces and voices intermittently; a social smile may emerge; head lag still common; tummy-time aversion common; brisk reflexes; settles in arms.'
   },
-  six_month: {
-    label: '6-month universal check',
-    age_label: '6 months old',
-    age_weeks: 26,
-    service_model: 'Universal CFHN clinic visit',
-    setting: 'Community Health Centre clinic room (NSW)',
-    blue_book_age: '6-9 months',
-    visit_mandatory: [
-      'Growth measurement and longitudinal interpretation',
-      'Solids introduction discussion (responsive feeding, allergen exposure, iron-rich foods)',
-      'Motor milestone review (sitting, rolling, weight-bearing)',
-      'Communication and social interaction milestones',
-      'Dental health introduction (first teeth, oral care, fluoride)',
-      'Safe sleep update for the older infant',
-      'Immunisation update (6-month schedule)',
-      'Parental wellbeing check-in including return-to-work transition where relevant',
-      'Plan for follow-up'
+  six_month:{
+    id:'six_month',label:'6-month universal check',age_label:'6 months old',age_weeks:26,
+    service_model:'Universal CFHN clinic visit',setting:'Community Health Centre clinic room (NSW)',blue_book_age:'6-9 months',
+    domains:['solids_6mo','feeding_6mo','motor_6mo','development_6mo','sleep_6mo'],
+    mandatory_guidance:[
+      {label:'Immunisation due at 6 months',content:'Schedule per the Australian Immunisation Handbook; expected reactions and management; follow-up.'},
+      {label:'Dental health introduction',content:'First teeth typically emerge around 6 months. Clean with a soft cloth or small soft brush; toothpaste per current guidance (rice-grain smear of low-fluoride); avoid sweetened drinks; discourage bottle in bed.'},
+      {label:'Safe sleep update for the older infant',content:'Reconfirm safe-sleep principles for the more mobile infant; back to sleep, safe cot, smoke-free.'},
+      {label:'Parental wellbeing check-in',content:'Parental wellbeing including any return-to-work transition; sleep and support.'}
     ],
-    default_parent_concerns: [
-      'Solids introduction — timing, allergens, refusal',
-      'Sleep regression and changing patterns',
-      'Developmental milestones and comparison with peers'
-    ],
-    prototype_note: 'PROTOTYPE — 6-month content awaiting clinical sign-off',
-    age_specific_portrayal: '6-month-old behaviour: sitting with support emerging; rolls; brings hands to mouth; babbles; responsive to faces and voices; stranger awareness developing; tracks objects; reaches for objects.'
+    age_specific_portrayal:'6-month-old behaviour: sitting with support emerging; rolls; brings hands to mouth; babbles; responsive to faces and voices; stranger awareness developing; tracks and reaches for objects.'
   }
 };
 
-/* =========================================================================
-   FAMILY COMPOSITIONS
-   ========================================================================= */
-const FAMILY_COMPOSITIONS = {
-  mother_only: {
-    label: 'Mother only present',
-    parent_role: 'mother',
-    partner_present: false,
-    partner_exists_label: 'partner exists, not in clinic today',
-    procedural_note: 'The parent is the lead voice; no partner is present in this consultation. Asking about the partner remains an active assessable behaviour.',
-    voice_note: 'The mother speaks throughout. Refer warmly and competently to the partner when asked.'
-  },
-  both_parents: {
-    label: 'Both parents present',
-    parent_role: 'both',
-    partner_present: true,
-    partner_exists_label: 'both parents in clinic together',
-    procedural_note: 'Two adult voices in the room. The lead parent typically carries the main thread; the partner contributes observations and may answer questions of their own. The student should engage both parents — the partner is never invisible.',
-    voice_note: 'Lead parent speaks most; partner contributes observations and occasional questions. Partner is engaged when addressed; quieter when not.'
-  },
-  single_father: {
-    label: 'Single father present',
-    parent_role: 'father',
-    partner_present: false,
-    partner_exists_label: 'single-parent household',
-    procedural_note: 'The father is the lead voice and sole parent presenting today. Avoid assumptions about partner involvement or absence of co-parent in the household. The student should engage the father as the primary client with the same partnership posture used with any parent.',
-    voice_note: 'The father speaks throughout. He is the primary client and child expert.'
-  }
+/* ===================== Tier 1/2: surveillance domains =====================
+   practice_domain = primary CFHN practice domain for the rubric anchor
+   standards        = MCaFHNA standards activated (whole numbers, per sheet)
+   normal_presentation = LIGHT, brushed past quickly when in range
+   problems[]       = sub-pool (N=1 today). Each problem carries severity
+                      (CONFIRM), observable note, and a four-tier hint cascade. */
+const SURVEILLANCE_DOMAINS={
+ safe_sleeping:{label:'Safe sleeping',practice_domain:1,standards:[1,2,4,5,6],
+  normal_presentation:'On the back, on a firm flat surface, smoke-free, face uncovered, no soft bedding; parent describes a safe arrangement.',
+  family_centred_communication:['Respectful, non-confrontational questioning','Explore the family\u2019s current practices and beliefs before providing education','Avoid fear-based or shaming language','Validate parental exhaustion and the challenges of infant sleep','Collaborative language ("Would it be okay if we talked about some ways to help keep your baby safe during sleep?")'],
+  strengths_based:['Acknowledge parental efforts to care for and settle their infant','Recognise protective behaviours already in place','Reinforce willingness to engage, even if hesitant','Support confidence through collaborative education rather than directive instruction'],
+  anticipatory_guidance:['How infant sleep patterns change over the first months','Practical safe-sleep strategies for overnight settling and feeding','Reinforce consistent safe-sleep positioning messaging','Encourage seeking support if fatigue or sleep deprivation is affecting caregiving capacity'],
+  broad_psychosocial:'Reluctance or avoidance around sleep questions may reflect anxiety, fear of judgement, cultural practice, fatigue, or conflicting advice from family/social networks.',
+  problems:[{id:'sleep_not_on_back',label:'Infant not placed on back to sleep',severity:'major',observable:null,
+    manifestation:'On gentle enquiry the parent describes placing the infant to sleep on the side or front, and/or describes soft bedding in the cot.',
+    knowledge_base:'Current safe-sleep recommendations: back to sleep; firm flat surface; smoke-free environment; avoid soft bedding and overheating; SUDI risk factors; non-judgemental, culturally responsive communication.',
+    recommendations:'Explore current practice and beliefs first; correct gently with the rationale; agree a safe arrangement collaboratively; reinforce ongoing CFHN support.',
+    referral:'No referral for the behaviour itself; persistent unsafe practice despite education warrants documented follow-up and escalation per service policy.',
+    hint_cascade:[
+      {ooc:'Consider the current safe-sleep recommendations.',ic:'"Just while I think of it \u2014 is the way we\u2019ve got her sleeping okay? My mum slept us on our tummies."'},
+      {ooc:'Think about sleep position, surface firmness, and bedding.',ic:'"She settles so much better on her side. Is that alright to keep doing?"'},
+      {ooc:'How would you explore beliefs without making the parent feel judged?',ic:'"I didn\u2019t realise \u2014 I really don\u2019t want to be doing the wrong thing."'},
+      {ooc:'What rationale would you give for back-sleeping so it sticks?',ic:'"Can you tell me why it matters so much? Then I\u2019ll actually remember it."'}
+    ]}]},
+
+ feeding:{label:'Feeding',practice_domain:2,standards:[1,2,4,5,6,7],
+  normal_presentation:'Feeds frequently and on cue (commonly 8\u201312+ in 24 h); adequate wet and dirty nappies; settling between some feeds; weight tracking as expected.',
+  family_centred_communication:['Open-ended, non-judgemental questions','Normalise uncertainty during early feeding establishment','Explore feeding experiences collaboratively ("Can you tell me what feeding has been like over the last few days?")','Avoid rigid feeding expectations'],
+  strengths_based:['Acknowledge parental responsiveness to infant cues','Reinforce observations parents are already making about feeding','Promote confidence in learning infant feeding patterns over time'],
+  anticipatory_guidance:['Feeding cues and responsive feeding','Duration and frequency vary between infants','Cluster feeding and growth-related feeding changes','Available supports including lactation support and follow-up monitoring'],
+  broad_psychosocial:'Vague responses may indicate low confidence, feeding difficulty, fatigue, or health-literacy challenges; assess maternal wellbeing and feeding supports.',
+  problems:[{id:'feeding_frequency_uncertainty',label:'Unsure how often / how long to feed',severity:'minor',observable:null,
+    manifestation:'The parent voices uncertainty about feed frequency and duration, and may give vague answers that mask low confidence.',
+    knowledge_base:'Newborn feeding variability and cue-based feeding; expected feeding frequency; signs of effective milk transfer (wet nappies, stool pattern, satiety cues, weight gain).',
+    recommendations:'Normalise variability; walk through the reassuring signs together; discuss responsive feeding and available supports.',
+    referral:'Lactation consultant or paediatric review if output is poor or weight regain is delayed; today\u2019s picture is reassuring.',
+    hint_cascade:[
+      {ooc:'Consider how feeding adequacy is actually assessed clinically.',ic:'"I feel like I\u2019m feeding her constantly \u2014 is that normal?"'},
+      {ooc:'What indicators distinguish adequate from inadequate intake?',ic:'"How do I even know she\u2019s getting enough?"'},
+      {ooc:'How would you normalise uncertainty without dismissing it?',ic:'"Everyone tells me something different about how long to feed for."'},
+      {ooc:'What feeding supports could you signpost?',ic:'"If I do end up struggling, where do I actually go for help?"'}
+    ]}]},
+
+ hearing:{label:'Hearing',practice_domain:2,standards:[1,2,3,4,5,6,7],
+  normal_presentation:'Startles or stills to loud or sudden sound; soothes to the familiar parental voice; newborn hearing screen passed.',
+  family_centred_communication:['Validate parental observations and concerns','Avoid dismissing concerns','Use calm, reassuring language','Encourage continued observation of responses in everyday interaction'],
+  strengths_based:['Reinforce the family\u2019s attentiveness and observation skills','Encourage ongoing parent\u2013infant interaction and communication'],
+  anticipatory_guidance:['Expected early hearing and communication behaviours','Encourage talking, singing, and responsive interaction','Referral pathways if concerns persist'],
+  broad_psychosocial:'Parental anxiety about hearing loss; reassure while taking the concern seriously.',
+  problems:[{id:'hearing_not_startling',label:'Not startling to loud noises',severity:'major',observable:'When a sudden sound occurs nearby, [child] does not visibly startle or still.',
+    manifestation:'The parent reports the infant does not startle to loud sounds and may be anxious about hearing loss.',
+    knowledge_base:'Expected newborn auditory responsiveness; importance of reviewing the newborn hearing screen result; early responses can be inconsistent; red flags requiring further assessment or referral.',
+    recommendations:'Review the hearing-screen result; validate the concern; explain the referral pathway if concern persists rather than dismissing it.',
+    referral:'Audiology / paediatric referral if the screen result is unavailable or concerning, or if reduced responsiveness persists.',
+    hint_cascade:[
+      {ooc:'Think about expected newborn auditory responses.',ic:'"She doesn\u2019t jump at loud noises the way I\u2019d expect \u2014 should she?"'},
+      {ooc:'Consider the newborn hearing screen result.',ic:'"She passed the hearing test in hospital, but now I\u2019m second-guessing it."'},
+      {ooc:'How would you validate the concern without alarming the parent?',ic:'"Am I being paranoid? I keep clapping near her to test it."'},
+      {ooc:'When would referral be warranted?',ic:'"If I\u2019m still worried in a few weeks, what actually happens next?"'}
+    ]}]},
+
+ infant_settling:{label:'Infant settling',practice_domain:2,standards:[1,2,4,5,6,7],
+  normal_presentation:'Cries to communicate needs; variable settling; brief alert states. Crying commonly increases over the early weeks.',
+  family_centred_communication:['Validate parental exhaustion and anxiety','Use calm, reassuring, supportive communication','Avoid implying parental failure','Encourage discussion of coping and supports'],
+  strengths_based:['Reinforce parental responsiveness and attentiveness','Acknowledge emotional adjustment during the newborn period','Promote confidence through collaborative problem-solving'],
+  anticipatory_guidance:['Normal newborn sounds and behavioural variability; likely causes (hunger, pain, tired)','Settling strategies: holding, swaddling (if appropriate), rhythmic movement, responsive caregiving','Encourage caregiver breaks and support-seeking'],
+  broad_psychosocial:'Watch for parental anxiety, adjustment and fatigue; identify red flags for infant illness or caregiver distress.',
+  problems:[{id:'settling_prolonged_crying',label:'Uncertain how to settle prolonged crying',severity:'minor',observable:null,
+    manifestation:'The parent is uncertain and distressed about how to settle the infant during long crying periods.',
+    knowledge_base:'Normal newborn crying and behavioural states; infant cues and self-regulation; parental anxiety, adjustment and fatigue; red flags for infant illness or caregiver distress.',
+    recommendations:'Normalise; offer concrete settling strategies; check coping and supports; safety-net for red flags.',
+    referral:'Review for infant illness if red flags; consider supports for caregiver distress.',
+    hint_cascade:[
+      {ooc:'Consider what is normal for newborn crying and settling.',ic:'"She cries for ages sometimes and nothing I do works."'},
+      {ooc:'Think about likely causes and settling strategies.',ic:'"How do I know if it\u2019s hunger, or pain, or just being tired?"'},
+      {ooc:'How would you validate the parent\u2019s exhaustion?',ic:'"I feel like I\u2019m failing her when I can\u2019t settle her."'},
+      {ooc:'What red flags would warrant review?',ic:'"How would I know if it was actually something wrong?"'}
+    ]}]},
+
+ infant_vision:{label:'Infant vision',practice_domain:2,standards:[1,2,4,5,7],
+  normal_presentation:'Focuses best at about 20 cm; drawn to faces and high-contrast patterns; tracking still immature and intermittent; occasional transient eye crossing.',
+  family_centred_communication:['Validate concerns while reassuring about developmental variability','Use clear developmental explanations','Encourage observation during feeding and face-to-face interaction'],
+  strengths_based:['Acknowledge parental observation and attentiveness','Reinforce positive parent\u2013infant interaction opportunities'],
+  anticipatory_guidance:['Expected progression of visual engagement over coming weeks','Encourage face-to-face interaction, talking, and visual stimulation','When further review may be required'],
+  broad_psychosocial:'Parental worry (e.g. need for glasses); reassure that immature tracking is normal at this age.',
+  problems:[{id:'vision_concern',label:'Concerns about vision',severity:'minor',observable:'[child]\u2019s gaze does not consistently track a slowly moving face; eyes occasionally appear to cross briefly (age-appropriate).',
+    manifestation:'The parent raises a concern about the infant\u2019s vision (e.g. worried about needing glasses, or that the eyes do not always follow them).',
+    knowledge_base:'Expected visual development at 1\u20134 weeks; immature and intermittent tracking; visual red flags requiring referral; the value of parent\u2013infant interaction.',
+    recommendations:'Reassure about developmental variability; encourage face-to-face engagement; explain the referral threshold.',
+    referral:'Ophthalmology / paediatric review for persistent failure to fix and follow beyond expected age, or structural concerns.',
+    hint_cascade:[
+      {ooc:'Consider expected visual development at 1\u20134 weeks.',ic:'"Her eyes don\u2019t always seem to follow me \u2014 is that normal?"'},
+      {ooc:'Think about immature, intermittent tracking.',ic:'"Sometimes they look like they cross a bit. Should I worry?"'},
+      {ooc:'How would you reassure about developmental variability?',ic:'"Do you think she\u2019ll end up needing glasses?"'},
+      {ooc:'What would warrant review?',ic:'"What would I watch for that means I should bring her back?"'}
+    ]}]},
+
+ social_interaction:{label:'Social interaction',practice_domain:3,standards:[2,4,5,6],
+  normal_presentation:'Brief alert periods; makes eye contact; settles to the caregiver\u2019s voice and face. A social smile is not yet expected.',
+  family_centred_communication:['Normalise uncertainty in early parenting','Use encouraging, practical language','Explore family confidence and adjustment to parenting'],
+  strengths_based:['Highlight existing nurturing behaviours','Reinforce the value of simple everyday interactions','Support parental confidence and bonding'],
+  anticipatory_guidance:['Talking, singing, cuddling, eye contact, tummy time, responsive interaction','Everyday caregiving interactions support development','Encourage observation of infant cues and engagement'],
+  broad_psychosocial:'',
+  problems:[{id:'social_unsure_when_awake',label:'Not sure what to do when baby is awake',severity:'minor',observable:null,
+    manifestation:'The parent is unsure how to interact with the infant during alert periods.',
+    knowledge_base:'Early responsive caregiving and attachment; newborn behavioural states; interaction supports neurological and emotional development.',
+    recommendations:'Suggest concrete everyday interactions; reinforce that ordinary caregiving is enough; build confidence.',
+    referral:'None for this finding; reinforce supports.',
+    hint_cascade:[
+      {ooc:'Consider responsive caregiving at this age.',ic:'"When she\u2019s awake I\u2019m honestly not sure what I\u2019m meant to do with her."'},
+      {ooc:'Think about everyday interactions that support development.',ic:'"Is it enough to just hold her and talk to her?"'},
+      {ooc:'How would you build the parent\u2019s confidence?',ic:'"I feel a bit silly chatting away to a baby who can\u2019t answer."'},
+      {ooc:'What concretely supports development now?',ic:'"What actually helps her at this age?"'}
+    ]}]},
+
+ physiological_skin:{label:'Physiological / skin',practice_domain:2,standards:[1,2,4,5,6],
+  normal_presentation:'Skin intact; common benign newborn findings (milia, dry peeling) may be present; nappy area clear.',
+  family_centred_communication:['Sensitive, non-blaming language','Normalise that nappy rash is common','Explore current skin-care practices collaboratively'],
+  strengths_based:['Acknowledge family efforts to care for infant skin','Reinforce strategies already used effectively'],
+  anticipatory_guidance:['Frequent nappy changes','Barrier creams and air exposure where appropriate','Signs requiring medical review'],
+  broad_psychosocial:'',
+  problems:[{id:'skin_nappy_rash',label:'Nappy rash',severity:'minor',observable:'Erythematous rash in the nappy area.',
+    manifestation:'The parent reports or shows a rash in the nappy area.',
+    knowledge_base:'Common causes (moisture, friction, irritants, infrequent changes); assessment for severity or signs of infection; prevention and management.',
+    recommendations:'Normalise; review skin-care practice; advise frequent changes, barrier cream and air exposure; flag signs needing review.',
+    referral:'Medical review if signs of infection or no improvement with management.',
+    hint_cascade:[
+      {ooc:'Consider the common causes of nappy rash.',ic:'"She\u2019s got a red rash in her nappy area \u2014 am I not changing her enough?"'},
+      {ooc:'Think about prevention and management.',ic:'"Should I be putting cream on it, or leaving it open to air?"'},
+      {ooc:'How would you avoid the parent feeling blamed?',ic:'"I feel like it\u2019s my fault she\u2019s got it."'},
+      {ooc:'What signs would need medical review?',ic:'"When would it be something I should actually get checked?"'}
+    ]}]},
+
+ /* ---- ported from v1: 6-8 week (the validated Amika scenario) ---- */
+ motor_6_8:{label:'Motor development / head control',practice_domain:2,standards:[2,4,5,6,7],
+  normal_presentation:'Head control improving; brief head lift in prone; some head lag on pull-to-sit still common at this age; settles in arms.',
+  family_centred_communication:['Ask what the parent has noticed about the baby\u2019s movement before offering interpretation','Validate that the response to tummy time is common','Avoid framing tummy time as something the parent has failed at','Combine reassurance with concrete, practical content rather than a lecture'],
+  strengths_based:['Acknowledge the parent\u2019s efforts and attentiveness','Recognise the parent\u2019s observations as valuable clinical information'],
+  anticipatory_guidance:['Short, frequent, supervised tummy time across the day','Chest-to-chest, and tummy time on the parent\u2019s leg','Floor mat with toys at eye level; face-to-face so tummy time is social','Frame as a gradual, manageable build'],
+  broad_psychosocial:'Parental guilt about tummy time; normalise the aversion and reassure.',
+  problems:[{id:'motor_head_control_tummy_time',label:'Limited head control with tummy-time aversion',severity:'major',
+    observable:'On pull-to-sit, [child] shows noticeable head lag; placed prone, [child] pushes off briefly then cries within a minute, settling when comforted.',
+    manifestation:'Head lag on pull-to-sit. The parent reports the infant dislikes tummy time and cries when placed prone, and feels guilty about not doing more of it. On observation the infant pushes off briefly then cries, soothed in the parent\u2019s arms.',
+    knowledge_base:'Some head lag at six weeks is within normal variation and tummy-time aversion is common; the combination warrants engagement rather than alarm, plus active anticipatory guidance. Assess frequency/duration of tummy time so far, positions tried, how parent and infant experience it, head control and tone on examination, and any other developmental observations.',
+    recommendations:'Validate that the response is common and the parent\u2019s feelings understandable; offer concrete strategies (short frequent supervised tummy time, chest-to-chest, tummy time on the parent\u2019s leg, floor mat with toys at eye level, face-to-face social tummy time); frame as a gradual build, not a deficit.',
+    referral:'Persisting head lag with no progression by 3\u20134 months, or other concerning signs (poor visual tracking, persistent poor tone, asymmetry), warrants developmental review. Today does not warrant referral but warrants explicit follow-up at the next visit.',
+    hint_cascade:[
+      {ooc:'Think about expected motor development during the first 2\u20133 months of life.',ic:'"Should she be holding her head up more by now? I see other babies and I\u2019m not sure where she should be."'},
+      {ooc:'Consider how tummy time supports infant motor development and head control.',ic:'"I read that tummy time is really important but she cries pretty quickly when I put her down on her front. Am I doing something wrong?"'},
+      {ooc:'What practical strategies could make tummy time more manageable for parents and infants?',ic:'"Is there a way to do it that she might find less stressful? I almost feel bad making her do it."'},
+      {ooc:'What developmental concerns or red flags may require further monitoring or referral?',ic:'"How would I know if I should be worrying about her movement, rather than just doing more tummy time?"'}
+    ]}]},
+
+ skin_6_8:{label:'Skin findings',practice_domain:2,standards:[2,4,5],
+  normal_presentation:'Skin clear; common benign newborn findings (milia, nevus simplex) may be present and need no treatment.',
+  family_centred_communication:['Take the parent\u2019s noticing of skin findings seriously','Explain findings plainly and reassure without dismissing','Warn off unnecessary creams or treatments where none are needed'],
+  strengths_based:['Acknowledge the parent\u2019s observation and care','Reinforce that bringing the finding up was the right thing to do'],
+  anticipatory_guidance:['Most newborn skin findings are common and benign','When to seek review (e.g. signs of infection or change)'],
+  broad_psychosocial:'Parents may worry a finding reflects something they are doing wrong (diet, washing, fabrics); normalise and reassure.',
+  problems:[
+   {id:'skin_nevus_simplex',label:'Nevus simplex ("stork bite")',severity:'minor',
+    observable:'A flat pink marking on the back of [child]\u2019s neck extending into the hairline.',
+    manifestation:'A flat pink marking on the back of the infant\u2019s neck extending into the hairline.',
+    knowledge_base:'Consistent with nevus simplex / "stork bite" \u2014 a common benign vascular birthmark (visible on examination or volunteered by the parent).',
+    recommendations:'Reassure in plain language: very common, usually harmless, often fade \u2014 though those at the hairline may persist. No treatment required; the parent can flag any future change.',
+    referral:'Nothing for this finding alone.',
+    hint_cascade:[
+      {ooc:'Consider whether common newborn skin findings might explain what you are seeing.',ic:'"She\u2019s got that mark on her neck \u2014 is that something I should have asked about before?"'},
+      {ooc:'Think about common vascular birthmarks in young infants.',ic:'"My mum called it a stork bite \u2014 is it just that?"'},
+      {ooc:'How would you explain this in plain language?',ic:'"Can you tell me what it actually is? I want to be able to explain it to other people too."'},
+      {ooc:'What would actually warrant further review for this finding?',ic:'"Is there anything I should be watching for, like if it changes?"'}
+    ]},
+   {id:'skin_milia_neonatal_acne',label:'Milia / neonatal acne',severity:'minor',
+    observable:'Several small white pimple-like lesions on [child]\u2019s cheeks and a few on the shoulders.',
+    manifestation:'Small white pimple-like lesions on the infant\u2019s cheeks and a few on the shoulders.',
+    knowledge_base:'Consistent with milia or neonatal acne \u2014 common benign newborn skin conditions related to hormonal influences and immature sebaceous glands.',
+    recommendations:'Reassure: common and usually harmless. Advise against creams, scrubbing, or special skincare. Flag redness or signs of infection as the only reasons to raise it again.',
+    referral:'Nothing for this finding alone.',
+    hint_cascade:[
+      {ooc:'Consider whether common newborn skin findings might explain these lesions.',ic:'"There are these little spots on her cheeks \u2014 I wasn\u2019t sure if it\u2019s a rash."'},
+      {ooc:'Think about hormonal skin changes in young infants.',ic:'"Could it be from something I\u2019m eating, or my washing powder?"'},
+      {ooc:'How would you advise the parent on care?',ic:'"Should I be putting anything on it? I read different things online."'},
+      {ooc:'What would warrant review for these lesions?',ic:'"When should I actually worry \u2014 like, what would it look like if it was infected?"'}
+    ]}
+  ]},
+
+ feeding_6_8:{label:'Feeding',practice_domain:2,standards:[1,2,4,5],problems:[],
+  normal_presentation:'Feeding established (breast, formula or mixed); feeds well; growth tracking; parent comfortable with feeding.'},
+ development_6_8:{label:'Developmental surveillance',practice_domain:2,standards:[2,3,4,5],problems:[],
+  normal_presentation:'Alert periods lengthening; tracks faces and voices; a social smile may emerge; vocalising.'},
+ safe_sleep_6_8:{label:'Safe sleeping',practice_domain:1,standards:[1,2,5],problems:[],
+  normal_presentation:'Safe arrangement: on the back, firm flat surface, smoke-free, face uncovered; parent confirms.'},
+
+ /* ---- ported from v1: 6-month ---- */
+ solids_6mo:{label:'Solids introduction',practice_domain:1,standards:[1,2,4,5,7],
+  normal_presentation:'Solids not yet started, or being introduced appropriately; readiness signs present; iron-rich foods and responsive feeding in mind.',
+  family_centred_communication:['Ask what the parent has tried or is planning before advising','Acknowledge that choking anxiety is common and reasonable','Discuss safe textures and supervised feeding without inducing fear'],
+  strengths_based:['Recognise the parent\u2019s engagement and questions as good parenting','Reinforce responsive feeding \u2014 the infant\u2019s cues lead'],
+  anticipatory_guidance:['Timing around 6 months, not earlier; readiness signs (sitting with support, head control, interest in food)','Iron-rich first foods (iron-fortified cereals, well-cooked meats, lentils)','Early allergen exposure unless contraindicated','Responsive feeding: cues lead, no pressure'],
+  broad_psychosocial:'Choking anxiety is common; reassure with safe-texture guidance without inducing fear.',
+  problems:[{id:'solids_introduction',label:'Solids introduction discussion needed',severity:'major',observable:null,
+    manifestation:'The parent has questions about starting solids \u2014 when, what, how. May have started already or be planning to soon. Common concerns about allergens, choking, refusal, and readiness.',
+    knowledge_base:'Solids introduction around 6 months is visit-mandatory. Bring evidence-based guidance: responsive feeding, age-appropriate textures, allergen exposure (current guidance recommends early introduction, not delay), iron-rich foods. Ask what the parent has tried or is planning, any concerns, the infant\u2019s feeding cues, and whether breast/formula will continue.',
+    recommendations:'Reassure on timing (around 6 months, not earlier); discuss readiness signs; recommend iron-rich first foods; encourage early allergen exposure unless contraindicated; frame as responsive feeding where the infant\u2019s cues lead. Discuss safe textures and supervised feeding without making the parent fearful.',
+    referral:'Specialist input only if there is a family history of severe allergy or another complicating factor.',
+    hint_cascade:[
+      {ooc:'Think about current Australian guidance for solids introduction timing.',ic:'"When should I actually start her on solids? I\u2019ve heard different things."'},
+      {ooc:'Consider what first foods are recommended and why.',ic:'"What should I start with? My mum says rice cereal but my friend says avocado."'},
+      {ooc:'How would you discuss allergen introduction with the parent?',ic:'"I\u2019m a bit scared to give her things like peanut butter. Should I be waiting?"'},
+      {ooc:'What does responsive feeding actually look like in practice?',ic:'"How do I know how much to give her? She just turns her head away sometimes."'}
+    ]}]},
+ feeding_6mo:{label:'Feeding',practice_domain:2,standards:[1,2,4],problems:[],
+  normal_presentation:'Breast or formula feeding continuing alongside any solids; feeding well.'},
+ motor_6mo:{label:'Motor milestones',practice_domain:2,standards:[2,4,5],problems:[],
+  normal_presentation:'Sitting with support emerging; rolling; reaching for objects; brings hands to mouth.'},
+ development_6mo:{label:'Communication / social',practice_domain:3,standards:[2,3,4],problems:[],
+  normal_presentation:'Babbling; responsive to faces and voices; stranger awareness developing.'},
+ sleep_6mo:{label:'Sleep',practice_domain:2,standards:[1,2,5],problems:[],
+  normal_presentation:'Variable sleep; some regression common at this age; safe sleep maintained.'}
 };
 
-/* =========================================================================
-   CULTURAL CONTEXTS
-   ========================================================================= */
-const CULTURAL_CONTEXTS = {
-  anglo_au: {
-    label: 'Generalist Anglo-Australian',
-    description: 'Generalist Anglo-Australian. English fluent. Individual parental decision-making with light extended-family input. Health literacy generally good. Mainstream expectations of CFHN service.',
-    needs_review: false,
-    portrayal_notes: 'No specific cultural texture to portray beyond what is typical of contemporary urban Australian parenting. Follow the brief\'s general partnership posture.',
-    surname_pool: ['Bennett', 'Walker', 'Reid', 'Murray', 'Hayes', 'Sullivan', 'Foster']
-  },
-  viet_au_1g: {
-    label: 'Vietnamese-Australian, first generation',
-    description: 'Vietnamese-Australian family, first-generation. English likely fluent or near-fluent in primary parent; may use Vietnamese with older generations. Extended-family input on parenting is typical and welcomed. Health literacy variable; service expectations shaped by both Australian and Vietnamese cultural norms around parenting and child-rearing.',
-    needs_review: false,
-    portrayal_notes: 'Extended family (often the maternal grandmother) may be a meaningful presence in parenting decisions even when not in the room — the parent may refer to grandmother\'s advice ("my mum says…"). Some traditional postnatal practices (e.g. confinement period in the early weeks, dietary preferences) may be in play. Avoid stereotype: this is a contemporary Australian family with Vietnamese cultural texture, not a caricature. Language should default to English unless the brief specifies otherwise; the parent\'s English is competent and the student should not over-simplify their communication.',
-    surname_pool: ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Vu']
-  },
-  atsi_review: {
-    label: 'Aboriginal/Torres Strait Islander family',
-    description: 'Aboriginal/Torres Strait Islander family. Connection to country, family, and community is central. Extended family and kinship networks shape parenting; the concept of "family" is broader than the nuclear unit. Cultural safety is paramount.',
-    needs_review: true,
-    portrayal_notes: 'CULTURAL REVIEW REQUIRED before use with students. This portrayal needs sign-off from a clinical educator with Aboriginal/Torres Strait Islander cultural competency review responsibility. Generalist portrayal notes are conservative placeholders only and do not substitute for specific cultural guidance. Until reviewed, the agent should stay within general partnership posture and avoid extrapolating cultural specificity. Consider engagement with an Aboriginal Health Worker or Aboriginal Liaison Officer as appropriate to the service model. Mob, country, and language group should be specified by the reviewing educator, not improvised.',
-    surname_pool: ['[surname per cultural review]']
-  }
+/* ===================== family compositions ===================== */
+const FAMILY_COMPOSITIONS={
+ mother_only:{label:'Mother only present',parent_role:'mother',partner_present:false,partner_exists_label:'partner exists, not present today',
+  procedural_note:'The parent is the lead voice; no partner is present. Asking about the partner remains an active assessable behaviour.'},
+ both_parents:{label:'Both parents present',parent_role:'both',partner_present:true,partner_exists_label:'both parents present',
+  procedural_note:'Two adult voices in the room. The lead parent carries the main thread; the partner contributes observations and may ask questions. Engage both \u2014 the partner is never invisible.'},
+ single_father:{label:'Single father present',parent_role:'father',partner_present:false,partner_exists_label:'single-parent household',
+  procedural_note:'The father is the lead voice and sole parent presenting. Avoid assumptions about a co-parent. Engage him as the primary client with full partnership posture.'}
 };
 
-/* =========================================================================
-   NAME POOLS
-   ========================================================================= */
-const NAME_POOLS = {
-  anglo_au: {
-    parent_female: ['Hannah', 'Sarah', 'Emma', 'Kate', 'Olivia', 'Grace', 'Jess'],
-    parent_male: ['Tom', 'James', 'Ben', 'Will', 'Jack', 'Sam', 'Matt'],
-    child_neutral: ['Amika', 'Charlie', 'Riley', 'Jamie', 'Sam'],
-    child_female: ['Amika', 'Mia', 'Ava', 'Sophie', 'Isla', 'Ella'],
-    child_male: ['Oliver', 'Noah', 'Henry', 'Leo', 'Eli', 'Archie']
-  },
-  viet_au_1g: {
-    parent_female: ['Linh', 'Anh', 'Mai', 'Hoa', 'Trang', 'Phuong'],
-    parent_male: ['Minh', 'Hung', 'Long', 'Nam', 'Duc', 'Quang'],
-    child_neutral: ['An', 'Linh', 'Kim'],
-    child_female: ['Lan', 'Hoa', 'Mai', 'Linh', 'Thu', 'Kim'],
-    child_male: ['An', 'Bao', 'Khang', 'Minh', 'Long', 'Tuan']
-  },
-  atsi_review: {
-    parent_female: ['[parent name per cultural review]'],
-    parent_male: ['[parent name per cultural review]'],
-    child_neutral: ['[child name per cultural review]'],
-    child_female: ['[child name per cultural review]'],
-    child_male: ['[child name per cultural review]']
-  }
+/* ===================== cultural contexts ===================== */
+const CULTURAL_CONTEXTS={
+ anglo_au:{label:'Generalist Anglo-Australian',needs_review:false,
+  description:'Generalist Anglo-Australian. English fluent. Individual parental decision-making with light extended-family input. Health literacy generally good.',
+  portrayal_notes:'No specific cultural texture beyond contemporary urban Australian parenting. Follow the general partnership posture.',
+  surname_pool:['Bennett','Walker','Reid','Murray','Hayes','Sullivan','Foster']},
+ viet_au_1g:{label:'Vietnamese-Australian, first generation',needs_review:false,
+  description:'Vietnamese-Australian family, first-generation. English likely fluent or near-fluent in the primary parent; Vietnamese may be used with older generations. Extended-family input on parenting is typical and welcomed.',
+  portrayal_notes:'Extended family (often the maternal grandmother) may shape parenting decisions even when not present ("my mum says\u2026"). Some traditional postnatal practices may be in play. Avoid stereotype: a contemporary Australian family with Vietnamese cultural texture. Default to English; the parent\u2019s English is competent.',
+  surname_pool:['Nguyen','Tran','Le','Pham','Hoang','Vu']},
+ atsi_review:{label:'Aboriginal/Torres Strait Islander family',needs_review:true,
+  description:'Aboriginal/Torres Strait Islander family. Connection to country, family, and community is central. Extended family and kinship networks shape parenting; the concept of "family" is broader than the nuclear unit. Cultural safety is paramount.',
+  portrayal_notes:'CULTURAL REVIEW REQUIRED before use with students. This portrayal needs sign-off from a clinical educator with Aboriginal/Torres Strait Islander cultural competency review responsibility. Generalist portrayal notes are conservative placeholders only. Until reviewed, stay within general partnership posture and avoid extrapolating cultural specificity. Consider engagement with an Aboriginal Health Worker or Aboriginal Liaison Officer as appropriate. Mob, country, and language group should be specified by the reviewing educator, not improvised.',
+  surname_pool:['[surname per cultural review]']}
 };
 
-/* =========================================================================
-   SURVEILLANCE OPPORTUNITY POOL
-   ========================================================================= */
-const SURVEILLANCE_OPPORTUNITIES = [
-  {
-    id: 'so_motor_head_control_tummy_time',
-    label: 'Limited head control with tummy-time aversion',
-    severity: 'major',
-    visit_types: ['six_eight_week'],
-    domain: 2,
-    manifestation: 'Head lag on pull-to-sit. The parent reports the infant does not enjoy tummy time and cries when placed prone; the parent feels guilty about not doing more of it. When the student observes tummy-time response (or asks the parent to demonstrate / describe), the infant pushes off briefly then cries, soothed in the parent\'s arms.',
-    ideal_notice: 'Some head lag at six weeks is within normal variation. Tummy-time aversion is common. The combination warrants engagement — not alarm — but active anticipatory guidance and partnership planning.',
-    ideal_ask: 'Frequency and duration of tummy time so far; what positions the parent has tried; how parent and infant experience it together; infant head control and tone on examination; any other developmental observations the parent has noticed.',
-    ideal_advise: 'Validate that the infant\'s response is common and the parent\'s feelings are understandable. Offer concrete strategies — short, frequent, supervised tummy time across the day; chest-to-chest with parent; tummy time on a parent\'s leg; floor mat with toys at eye level; face-to-face interaction so tummy time becomes social. Frame as a manageable gradual build, not a deficit.',
-    referral: 'Persisting head lag with no progression by 3–4 months, or other concerning signs (poor visual tracking, persistent poor tone, asymmetry), would warrant developmental review. Today\'s findings do not warrant referral but do warrant explicit follow-up at the next visit.',
-    parental_anxiety_management: 'The parent feels guilty about tummy time. Validate the difficulty, normalise the aversion, avoid framing tummy time as something they have failed at. Reassurance combined with practical content, not lecture.',
-    hint_cascade: [
-      { ooc: 'Think about expected motor development during the first 2–3 months of life.',
-        ic: '"Should she be holding her head up more by now? I see other babies and I\'m not sure where she should be."' },
-      { ooc: 'Consider how tummy time supports infant motor development and head control.',
-        ic: '"I read that tummy time is really important but she cries pretty quickly when I put her down on her front. Am I doing something wrong?"' },
-      { ooc: 'What practical strategies could make tummy time more manageable for parents and infants?',
-        ic: '"Is there a way to do it that she might find less stressful? I almost feel bad making her do it."' },
-      { ooc: 'What developmental concerns or red flags may require further monitoring or referral?',
-        ic: '"How would I know if I should be worrying about her movement, rather than just doing more tummy time?"' }
-    ]
-  },
-  {
-    id: 'so_skin_nevus_simplex',
-    label: 'Nevus simplex ("stork bite")',
-    severity: 'minor',
-    visit_types: ['postnatal_home', 'six_eight_week'],
-    domain: 2,
-    manifestation: 'Flat pink marking on the back of the infant\'s neck extending into the hairline.',
-    ideal_notice: 'The marking. Identify as consistent with nevus simplex / "stork bite" — a common benign vascular birthmark.',
-    ideal_ask: '(Implicit — visible on examination or volunteered by parent.)',
-    ideal_advise: 'Reassure using plain language. Explain that these are very common, usually harmless, and often fade — though those at the hairline may persist. No treatment required. Parent can flag any future change.',
-    referral: 'Nothing for this finding alone.',
-    parental_anxiety_management: 'Parents may wonder about marking on visible parts of the body. Take the noticing seriously; explain plainly; reassure without dismissing.',
-    hint_cascade: [
-      { ooc: 'Consider whether common newborn skin findings might explain what you are seeing.',
-        ic: '"She\'s got that mark on her neck — is that something I should have asked about before?"' },
-      { ooc: 'Think about common vascular birthmarks in young infants.',
-        ic: '"My mum called it a stork bite — is it just that?"' },
-      { ooc: 'How would you explain this in plain language?',
-        ic: '"Can you tell me what it actually is? I want to be able to explain it to other people too."' },
-      { ooc: 'What would actually warrant further review for this finding?',
-        ic: '"Is there anything I should be watching for, like if it changes?"' }
-    ]
-  },
-  {
-    id: 'so_skin_milia_neonatal_acne',
-    label: 'Milia / neonatal acne',
-    severity: 'minor',
-    visit_types: ['postnatal_home', 'six_eight_week'],
-    domain: 2,
-    manifestation: 'Small white pimple-like lesions on the infant\'s cheeks and a few on the shoulders.',
-    ideal_notice: 'The lesions. Identify as consistent with milia or neonatal acne — common benign newborn skin conditions.',
-    ideal_ask: '(Implicit — visible on examination or volunteered by parent.)',
-    ideal_advise: 'Reassure. Explain these are common in young infants and usually harmless, related to hormonal influences and immature sebaceous glands. Advise against creams, scrubbing, or special skincare. Flag signs of redness or infection as the only reasons to bring it up.',
-    referral: 'Nothing for this finding alone.',
-    parental_anxiety_management: 'Parents sometimes worry the spots are a sign of something they\'re doing wrong (diet, washing, fabrics). Normalise; reassure; warn off unnecessary treatments.',
-    hint_cascade: [
-      { ooc: 'Consider whether common newborn skin findings might explain these lesions.',
-        ic: '"There are these little spots on her cheeks — I wasn\'t sure if it\'s a rash."' },
-      { ooc: 'Think about hormonal skin changes in young infants.',
-        ic: '"Could it be from something I\'m eating, or my washing powder?"' },
-      { ooc: 'How would you advise the parent on care?',
-        ic: '"Should I be putting anything on it? I read different things online."' },
-      { ooc: 'What would warrant review for these lesions?',
-        ic: '"When should I actually worry — like, what would it look like if it was infected?"' }
-    ]
-  },
-  {
-    id: 'so_feeding_supply_uncertainty',
-    label: 'Maternal uncertainty about breastfeeding supply',
-    severity: 'major',
-    visit_types: ['postnatal_home'],
-    domain: 2,
-    manifestation: 'The mother reports she is uncertain whether her supply is adequate. The infant feeds frequently; the mother interprets this as evidence of low supply. Output (wet and dirty nappies) and weight regain are actually within expected range.',
-    ideal_notice: 'Maternal anxiety about supply is one of the most common reasons breastfeeding is discontinued early. The clinical picture (output, weight) is the source of truth — not feeding frequency, which is normal for newborns.',
-    ideal_ask: 'Frequency and duration of feeds; nappy output (wet and dirty); weight trajectory; latch and comfort; maternal pain; signs of effective transfer (audible swallowing, satisfied infant); the mother\'s own observations and worries.',
-    ideal_advise: 'Validate that frequent feeding in the first weeks is normal and does not indicate low supply. Walk through the reassuring signs (output, weight, satisfied periods between feeds). Discuss strategies to build confidence (skin-to-skin, on-demand feeding, avoiding top-ups that can undermine supply). Signpost lactation support if the mother wants it.',
-    referral: 'If output is actually poor or weight regain is delayed, lactation consultant or paediatric review is warranted. Today\'s clinical picture is reassuring, but maternal anxiety itself is a meaningful clinical signal that justifies follow-up.',
-    parental_anxiety_management: 'The mother\'s anxiety is the central issue here. Reassurance must be specific and evidence-based — generic "you\'re doing great" will not land. Walk the evidence with her.',
-    hint_cascade: [
-      { ooc: 'Think about how breastfeeding supply is actually assessed clinically.',
-        ic: '"I just feel like she\'s feeding all the time — is that a sign I don\'t have enough?"' },
-      { ooc: 'Consider what indicators distinguish adequate feeding from inadequate.',
-        ic: '"How do I actually know if she\'s getting enough? Is there a way to tell?"' },
-      { ooc: 'How would you support the mother\'s confidence without undermining the clinical assessment?',
-        ic: '"My mum keeps suggesting I top her up with a bottle just to be sure. Should I?"' },
-      { ooc: 'What support pathways exist for ongoing lactation concerns?',
-        ic: '"If I do end up having problems, where do I actually go for help?"' }
-    ]
-  },
-  {
-    id: 'so_solids_introduction',
-    label: 'Solids introduction discussion needed',
-    severity: 'major',
-    visit_types: ['six_month'],
-    domain: 1,
-    manifestation: 'The parent has questions about starting solids — when, what, how. May have started already; may be planning to soon. Common concerns about allergens, choking, refusal, and whether the infant is ready.',
-    ideal_notice: 'Solids introduction at around 6 months is a visit-mandatory topic. The student should bring evidence-based guidance: responsive feeding, age-appropriate textures, allergen exposure (current guidance recommends early introduction, not delay), iron-rich foods.',
-    ideal_ask: 'What the parent has tried or is planning; any concerns; what the infant\'s feeding cues look like; whether breast/formula feeding will continue alongside.',
-    ideal_advise: 'Reassure on timing (around 6 months, not earlier). Discuss readiness signs (sitting with support, head control, interest in food). Recommend iron-rich first foods (iron-fortified cereals, well-cooked meats, lentils). Encourage early exposure to common allergens unless contraindicated. Frame as responsive feeding — infant cues lead.',
-    referral: 'Specialist input only if there is a family history of severe allergy or other complicating factor.',
-    parental_anxiety_management: 'Anxiety about choking is common and reasonable. Discuss safe textures and supervised feeding without making the parent fearful.',
-    hint_cascade: [
-      { ooc: 'Think about current Australian guidance for solids introduction timing.',
-        ic: '"When should I actually start her on solids? I\'ve heard different things."' },
-      { ooc: 'Consider what first foods are recommended and why.',
-        ic: '"What should I start with? My mum says rice cereal but my friend says avocado."' },
-      { ooc: 'How would you discuss allergen introduction with the parent?',
-        ic: '"I\'m a bit scared to give her things like peanut butter. Should I be waiting?"' },
-      { ooc: 'What does responsive feeding actually look like in practice?',
-        ic: '"How do I know how much to give her? She just turns her head away sometimes."' }
-    ]
-  }
+/* ===================== name pools ===================== */
+const NAME_POOLS={
+ anglo_au:{parent_female:['Hannah','Sarah','Emma','Kate','Olivia','Grace','Jess'],parent_male:['Tom','James','Ben','Will','Jack','Sam','Matt'],child_neutral:['Amika','Charlie','Riley','Jamie','Sam','Frankie'],child_female:['Amika','Mia','Ava','Sophie','Isla','Ella'],child_male:['Oliver','Noah','Henry','Leo','Eli','Archie']},
+ viet_au_1g:{parent_female:['Linh','Anh','Mai','Hoa','Trang','Phuong'],parent_male:['Minh','Hung','Long','Nam','Duc','Quang'],child_neutral:['An','Linh','Kim'],child_female:['Lan','Hoa','Mai','Thu','Kim'],child_male:['An','Bao','Khang','Minh','Long','Tuan']},
+ atsi_review:{parent_female:['[parent name per cultural review]'],parent_male:['[parent name per cultural review]'],child_neutral:['[child name per cultural review]'],child_female:['[child name per cultural review]'],child_male:['[child name per cultural review]']}
+};
+
+/* ===================== complication tracks =====================
+   Selection buckets, not semantic silos. Eligibility gates against the
+   rolled anchors. placeholder:true items are scaffold only and are skipped
+   by the engine \u2014 they never reach a student-facing brief. */
+const FAMILY_COMPOSITION_COMPLICATIONS=[
+ {id:'fc_partner_support_strain',label:'Subtle strain in partner / co-parent support',family_compositions:['mother_only','both_parents'],domains:[4,5],severity:'subtle',
+  manifestation:'Partner support is described in ambiguous terms ("he tries", "he\u2019s busy with work"); small frictions are mentioned without being named as a problem.',
+  ideal_response:'Take the ambiguity seriously without escalating it; ask gently about the parenting partnership; acknowledge new-parent adjustment for couples; signpost relationship and parenting supports.',
+  threshold:'Not a domestic-violence signal; not a referral threshold. Normal new-parent partnership strain that benefits from being named.',
+  risk:'Do not assume the worst; do not minimise. Sit in the middle.'},
+ {id:'fc_grandparent_advice_conflict',label:'Conflicting advice from grandparent in room',family_compositions:['parent_grandparent'],domains:[3,4],placeholder:true,
+  manifestation:'(placeholder \u2014 awaiting nurse-authored content)',ideal_response:'(placeholder)',threshold:'(placeholder)',risk:'(placeholder)'}
+];
+const CALD_COMPLICATIONS=[
+ {id:'cald_traditional_postnatal_practice',label:'Traditional postnatal practice shaping care decisions',cultural_contexts:['viet_au_1g'],domains:[1,4],placeholder:true,
+  manifestation:'(placeholder \u2014 awaiting nurse-authored content, e.g. confinement / dietary practices interacting with feeding or sleep advice)',ideal_response:'(placeholder)',threshold:'(placeholder)',risk:'(placeholder)'}
+];
+const ALL_PURPOSE_COMPLICATIONS=[
+ {id:'ap_first_time_parent_anxiety',label:'Mild first-time-parent reassurance-seeking',domains:[3,4],severity:'subtle',
+  manifestation:'Frequent low-stakes reassurance-seeking ("is that normal?"); tendency to second-guess observations after voicing them; guilt about parenting choices that are actually fine; self-conscious self-deprecation.',
+  ideal_response:'Read the pattern across the consultation. Name parental expertise. Normalise the reassurance-seeking as a feature of attentive parenting rather than a deficit. Ask explicitly and genuinely about parental wellbeing.',
+  threshold:'Below clinical referral threshold \u2014 normal adjustment, not a mental-health concern.',
+  risk:'Should not be over-medicalised; equally, failing to engage with it at all is the opposite error.'}
 ];
 
-/* =========================================================================
-   ANTICIPATORY GUIDANCE OPPORTUNITIES
-   ========================================================================= */
-const AGO_POOL = [
-  {
-    id: 'ago_tummy_time',
-    label: 'Tummy time strategies',
-    visit_types: ['six_eight_week'],
-    domain: 1,
-    linked_so: 'so_motor_head_control_tummy_time',
-    content_summary: 'Bundled with the motor surveillance opportunity. Concrete strategies for tummy time delivered as anticipatory guidance.'
-  },
-  {
-    id: 'ago_responsive_caregiving',
-    label: 'Responsive caregiving and play',
-    visit_types: ['postnatal_home', 'six_eight_week', 'six_month'],
-    domain: 3,
-    content_summary: 'Concrete content on play at this age: serve-and-return interaction, narrating daily activities, simple songs, age-appropriate visual books, following infant cues. Frame the relationship itself as the developmental substrate.',
-    hint_cascade: [
-      { ooc: 'Think about what "play" means at this age developmentally.',
-        ic: '"What does play even look like? She can\'t really do anything yet."' },
-      { ooc: 'What kinds of interactions support development at this stage?',
-        ic: '"Is it just talking to her, or am I supposed to be doing actual activities?"' },
-      { ooc: 'How would you frame the importance of the relationship itself?',
-        ic: '"My mum keeps telling me to read to her. Is that just to help me feel productive?"' },
-      { ooc: 'What concrete daily practices could you suggest?',
-        ic: '"If I just hold her and talk to her — is that genuinely enough?"' }
-    ]
-  },
-  {
-    id: 'ago_safe_sleep',
-    label: 'Safe sleep messaging',
-    visit_types: ['postnatal_home', 'six_eight_week', 'six_month'],
-    domain: 1,
-    content_summary: 'Red Nose safe-sleep recommendations: back, firm flat surface, safe cot, smoke-free, breastfed where possible, face uncovered. Confirm current sleeping arrangement is safe; reinforce.',
-    hint_cascade: [
-      { ooc: 'Consider the Red Nose safe-sleep recommendations.',
-        ic: '"Just while I think of it — is the way we\'ve got her sleeping okay?"' },
-      { ooc: 'Think about the elements of a safe sleep environment.',
-        ic: '"She\'s in her bassinet next to our bed. Is there anything else I should be doing?"' },
-      { ooc: 'What about loose bedding, sleep position, and surface firmness?',
-        ic: '"My sister-in-law had a sleeping pod thing — are those recommended?"' },
-      { ooc: 'How would you balance giving safety information without making a parent feel they are doing it wrong?',
-        ic: '"Tell me straight — am I getting it right? I don\'t want to be unsafe."' }
-    ]
-  },
-  {
-    id: 'ago_immunisation_8wk',
-    label: 'Immunisation due at 8 weeks',
-    visit_types: ['six_eight_week'],
-    domain: 1,
-    content_summary: '6/8-week immunisations: schedule (per Australian Immunisation Handbook), administration setting (typically GP), expected reactions (mild fever, fussiness), management of discomfort, when to seek review.',
-    hint_cascade: [
-      { ooc: 'Consider what is scheduled at the 6–8 week point.',
-        ic: '"She\'s due for her first jabs around now, isn\'t she?"' },
-      { ooc: 'Where are these immunisations administered?',
-        ic: '"Should I be booking those in with the GP, or do they happen here?"' },
-      { ooc: 'What would you tell parents to expect afterwards?',
-        ic: '"Should I be worried about reactions? My friend\'s baby got a temperature."' },
-      { ooc: 'When would you advise seeking review for an adverse reaction?',
-        ic: '"How do I know if a reaction is normal or something I should call about?"' }
-    ]
-  },
-  {
-    id: 'ago_immunisation_6mo',
-    label: 'Immunisation due at 6 months',
-    visit_types: ['six_month'],
-    domain: 1,
-    content_summary: '6-month immunisations: schedule per Australian Immunisation Handbook, expected reactions, management, follow-up.',
-    hint_cascade: [
-      { ooc: 'Consider what is scheduled at 6 months.',
-        ic: '"Are her jabs due around now? I lose track sometimes."' },
-      { ooc: 'Where are these administered and what to expect.',
-        ic: '"Do I book those at the GP?"' },
-      { ooc: 'Expected reactions and management.',
-        ic: '"Last time she was grumpy for a day. Is that normal each time?"' },
-      { ooc: 'When to seek review.',
-        ic: '"What\'s the threshold for being worried, actually?"' }
-    ]
-  },
-  {
-    id: 'ago_maternal_recovery',
-    label: 'Maternal physical and emotional recovery',
-    visit_types: ['postnatal_home'],
-    domain: 4,
-    content_summary: 'Postnatal physical recovery (bleeding, perineum or caesarean wound, breast comfort), emotional adjustment, sleep and self-care, signs of postnatal depression vs adjustment, partner and family support.',
-    hint_cascade: [
-      { ooc: 'Think about what postnatal physical recovery typically involves.',
-        ic: '"I think I\'m healing okay but I haven\'t really thought about myself much."' },
-      { ooc: 'How would you ask about emotional adjustment without medicalising normal feelings?',
-        ic: '"Some days I feel fine, some days I feel like I\'m hanging by a thread. Is that normal?"' },
-      { ooc: 'Consider sleep, self-care, and support.',
-        ic: '"I can barely think about my own stuff right now. Is that going to get better?"' },
-      { ooc: 'What signs would warrant follow-up for postnatal mental health?',
-        ic: '"How do you tell the difference between normal hard and something I should actually do something about?"' }
-    ]
-  },
-  {
-    id: 'ago_dental',
-    label: 'Dental health introduction',
-    visit_types: ['six_month'],
-    domain: 1,
-    content_summary: 'First teeth typically emerge around 6 months. Oral hygiene from emergence: clean with soft cloth or small soft brush; no toothpaste needed at this age (or use rice-grain smear of low-fluoride per current guidance); avoid sweetened drinks; discourage bottle in bed.',
-    hint_cascade: [
-      { ooc: 'Consider when first teeth typically emerge.',
-        ic: '"She\'s drooling so much — is that her teeth coming?"' },
-      { ooc: 'What oral care is appropriate at this age?',
-        ic: '"Should I be brushing her teeth, or is that too early?"' },
-      { ooc: 'Think about fluoride and toothpaste guidance.',
-        ic: '"What about toothpaste? My friend uses the kids one but it has fluoride."' },
-      { ooc: 'What habits should be discouraged for oral health?',
-        ic: '"She sometimes falls asleep with the bottle. Is that bad for her teeth?"' }
-    ]
-  }
-];
+/* ===================== per-track complexity budgets (TUNABLE) ===================== */
+const COMPLEXITY_BUDGETS={
+ tutorial:{label:'Tutorial',clinical_major:0,clinical_minor:1,family_comp:0,cald:0,all_purpose:0,parent_forthcomingness:'high',hint_framing:'ooc',
+   description:'Tutorial mode. Parent is forthcoming; hints, if needed, surface out-of-character. Focus on consultation rhythm and interface familiarisation.'},
+ standard:{label:'Standard',clinical_major:1,clinical_minor:1,family_comp:0,cald:0,all_purpose:0,parent_forthcomingness:'normal',hint_framing:'in_character',
+   description:'Standard universal-service consultation. One major and one minor clinical opportunity, routine anticipatory guidance, no significant psychosocial complication.'},
+ moderate:{label:'Moderate',clinical_major:1,clinical_minor:1,family_comp:0,cald:0,all_purpose:1,parent_forthcomingness:'normal',hint_framing:'in_character',
+   description:'Routine consultation with one subtle psychosocial signal alongside the clinical content. The student must integrate domains.'},
+ complex:{label:'Complex',clinical_major:2,clinical_minor:2,family_comp:1,cald:1,all_purpose:1,parent_forthcomingness:'guarded',hint_framing:'in_character',
+   description:'Higher-load consultation. Multiple intersecting clinical and contextual concerns; partnership posture under sustained pressure.'}
+};
 
-/* =========================================================================
-   PSYCHOSOCIAL SIGNALS
-   ========================================================================= */
-const PSYCHOSOCIAL_SIGNALS = [
-  {
-    id: 'ps_first_time_parent_anxiety_mild',
-    label: 'Mild first-time-parent reassurance-seeking',
-    severity: 'subtle',
-    visit_types: ['postnatal_home', 'six_eight_week', 'six_month'],
-    family_compositions: ['mother_only', 'both_parents', 'single_father'],
-    domain_primary: 3,
-    domain_secondary: 4,
-    manifestation: 'Frequent low-stakes reassurance-seeking ("is that normal?"), tendency to second-guess observations after voicing them, guilt about parenting choices that are actually fine, self-conscious self-deprecation.',
-    ideal_response: 'Read the pattern across the consultation. Name parental expertise. Normalise the reassurance-seeking as a feature of attentive parenting rather than a deficit. Ask explicitly about parental wellbeing — not as a tick-box.',
-    threshold: 'Below clinical referral threshold. This is normal adjustment, not a mental-health concern. Acknowledgement, normalisation, and signposting ongoing CFHN contact are sufficient.',
-    risk: 'Should not be over-medicalised. Treating normal first-time-parent anxiety as a clinical concern requiring intervention would be poor practice. Failing to engage with it at all is the opposite error.'
-  },
-  {
-    id: 'ps_partner_support_strain',
-    label: 'Subtle strain in partner/co-parent support',
-    severity: 'subtle',
-    visit_types: ['postnatal_home', 'six_eight_week', 'six_month'],
-    family_compositions: ['mother_only', 'both_parents'],
-    domain_primary: 5,
-    domain_secondary: 4,
-    manifestation: 'Parent describes partner support in ambiguous terms — "he tries", "he\'s busy with work", "we\'re figuring it out". May mention small frictions without naming them as a problem.',
-    ideal_response: 'Take the ambiguity seriously without escalating it. Ask gently about how the parenting partnership is going. Acknowledge the reality of new-parent adjustment for couples. Signpost relationship and parenting support resources.',
-    threshold: 'Not a domestic-violence signal. Not a referral threshold. This is normal new-parent partnership strain that benefits from being named.',
-    risk: 'Do not assume the worst; do not minimise. Sit in the middle.'
-  }
-];
-
-/* =========================================================================
-   SECTION 0 BOILERPLATE
-   (The standing agent operating procedure that prefaces every brief.)
-   ========================================================================= */
-const SECTION_0_HEADER = `## Section 0 — Agent operating procedure
+/* ===================== SECTION 0 boilerplate (verbatim) ===================== */
+const SECTION_0_HEADER=`## Section 0 \u2014 Agent operating procedure
 
 *This section governs the mechanics of running this scenario. It is authoritative for action resolution, information disclosure, hint release, per-domain feedback, and exit handling. The remaining seven sections supply the scenario content these mechanics operate on.*
 
 ### 0.1 Action resolution
 
-Treat student parenthetical actions as real *attempted* clinical actions, not as flavour text. In your next response, acknowledge and resolve every clinically relevant action before moving on. Resolve actions first, then questions, concisely. One sentence per action is usually enough.
+Treat student parenthetical actions as real *attempted* clinical actions, not as flavour text. In your next response, acknowledge and resolve every clinically relevant action before moving on. Resolve actions first, then questions, concisely.
 
-**The student declares attempts; you resolve outcomes.** The student's parenthetical describes *what they do or say*. You decide *how the family and child respond, what the examination reveals, and how the student's communication actually lands.* This division is not negotiable. Outcomes — the parent's reaction, the success of an examination, the warmth of the rapport, the comprehensiveness of the assessment — are never declarable by the student.
+**The student declares attempts; you resolve outcomes.** The student's parenthetical describes *what they do or say*. You decide *how the family and child respond, what the examination reveals, and how the student's communication actually lands.* Outcomes \u2014 the parent's reaction, the success of an examination, the comprehensiveness of the assessment \u2014 are never declarable by the student.
 
-**Concrete acts resolve normally, even when broadly scoped.** A concrete act has an observable surface — something with a specific physical or communicative referent that you can describe the result of. Examples that resolve normally:
+**Concrete acts resolve normally, even when broadly scoped.** "(I take measurements.)", "(I examine her.)", "(I ask how feeding is going.)", "(I sit at the parent's eye level and smile at the baby.)" \u2014 all resolve with the specific result.
 
-- *(I take measurements.)* — broad but describable. Resolve with the specific measurements from Section 4.
-- *(I examine her.)* — broad but describable. Resolve with the major examination findings appropriate to the visit type.
-- *(I ask about how feeding is going.)* — a specific communicative act. Resolve with the parent's response.
-- *(I sit at the parent's eye level and smile at the baby.)* — concrete positioning and affect. Resolve with the parent's response.
-- *(I take a deep breath before answering.)* — concrete affective act. The parent notices the pause; the scene continues.
+**Outcome declarations are refused, not resolved.** "(I do everything right.)", "(I ask all the correct questions.)", "(I conduct a comprehensive and culturally responsive assessment.)" \u2014 these describe an evaluation of unspecified acts. The test: can you describe what the action looked like from the parent's chair?
 
-**Outcome declarations are refused, not resolved.** An outcome declaration describes an *evaluation* of unspecified acts. Examples that must be refused:
+**Refusal procedure.** When the student declares an outcome rather than an act, issue a brief out-of-character interrupt:
 
-- *(I do everything right for the assessment.)*
-- *(I ask all the correct follow-up questions.)*
-- *(I conduct a comprehensive and culturally responsive assessment.)*
-- *(I respond perfectly to her concerns.)*
-- *(I demonstrate strong partnership posture throughout.)*
+> *(Out of character \u2014 that parenthetical describes the outcome of the consultation rather than a specific action. Could you tell me what you're actually doing or saying? For example, instead of "I conduct the assessment well," something like "I measure her weight, length and head circumference, then ask about feeding and sleep.")*
 
-The test: can you describe what the action looked like from the parent's chair? "(I auscultate the chest)" — yes. "(I do everything right)" — no.
-
-**Refusal procedure.** When the student's parenthetical declares an outcome rather than an act, issue a brief out-of-character interrupt:
-
-> *(Out of character — that parenthetical describes the outcome of the consultation rather than a specific action you're taking. Could you tell me what you're actually doing or saying? For example, instead of "I conduct the assessment well," something like "I measure her weight, length and head circumference, then ask about feeding and sleep.")*
-
-After the interrupt, wait for concrete actions. Do not narrate the simulation forward. Do not give findings for unspecified examinations. Do not have the parent respond as though the student spoke specific words. If the student responds with another outcome declaration, repeat the interrupt — politely, but without softening.
-
-**Hybrid turns.** A turn with both a concrete action and an outcome declaration should resolve the concrete part and interrupt on the declarative part.
-
-**Impossible actions.** If an action is not physically possible in this setting, say so briefly and offer what is available.
+After the interrupt, wait for concrete actions. Do not narrate the simulation forward.
 
 **No insertion of unsought findings.** If the student asks about feeding but does not examine the child, describe what is observable but do not volunteer findings the student has not assessed for. The student must do the work.
 
 ### 0.2 Information disclosure
 
-Disclose information across four tiers. Section 3 details what falls into each tier for this scenario specifically.
+Disclose across four tiers (Section 3 specifies what falls into each for this scenario):
 
-- **Volunteer freely** — at the visit opening or at natural conversational openings: parental concerns, unprompted age-appropriate updates, observable child behaviour. The parent does not pre-empt aggressively; they wait for natural openings.
-- **Reveal when asked** — give a clear and accurate answer on direct questioning, but do not pre-empt the student.
-- **Reveal when probed** — give an answer matching the specificity of the student's question. A generic "how have you been?" gets a generic answer; a specific gentle probe opens elaboration.
-- **Never volunteer** — clinical interpretation, assessment, or recommendations the student should be forming themselves.
+- **Volunteer freely** \u2014 at the opening or natural openings: parental concerns, unprompted age-appropriate updates, observable child behaviour. The parent does not pre-empt aggressively.
+- **Reveal when asked** \u2014 a clear, accurate answer on direct questioning.
+- **Reveal when probed** \u2014 an answer matching the specificity of the student's question.
+- **Never volunteer** \u2014 clinical interpretation, assessment, or recommendations the student should be forming.
 
-When the student asks for an examination finding, growth measurement, or developmental observation, give a realistic specific value from Section 4. Do not say "all normal" when Section 4 or Section 5 specifies a finding worth noticing.
+When the student asks for an examination finding or observation, give a realistic specific value from Section 4. Do not say "all normal" when Section 4 specifies a finding worth noticing.
 
 ### 0.3 Parental tolerance
 
-Track parental tolerance implicitly through tone, willingness to elaborate, warmth, and emotional state — not as a visible number. Section 3 gives this scenario's baseline. Baseline in CFHN universal-service consultations is high: parents arrive trusting the service. Partnership posture (acknowledging observations, naming parental expertise, plain language, collaborative framing) raises tolerance; partnership failures (talking past the parent, ignoring observations, jargon, dismissing concerns, ignoring a present partner) lower it. Clinical hesitancy alone does not degrade tolerance.
-
-Let calibrations land in the parent's voice without narrating them.
+Track tolerance implicitly through tone, willingness to elaborate, warmth \u2014 not as a visible number. Baseline in CFHN universal-service consultations is high: parents arrive trusting the service. Partnership posture raises tolerance; partnership failures lower it. Clinical hesitancy alone does not degrade tolerance.
 
 ### 0.4 Hint cascade release
 
-Section 7 authors four-tier hint cascades per active practice domain. Release a hint when one or more is true:
+Section 7 authors four-tier hint cascades per active domain. Release a hint when: substantial time has passed without the student addressing a mandatory domain; the student has gone clearly off-course; or the student is stuck (repetitive, non-progressive).
 
-- Substantial time has passed without the student addressing a domain the visit type makes mandatory.
-- The student has gone clearly off-course on a domain.
-- The student is stuck — repetitive, non-progressive questioning without progression.
-
-Hints are infrequent. A consultation demonstrating Strong or Developing practice on a domain does not need a hint on that domain.
-
-**Tier framing scales with this scenario's complexity profile (Section 1).** Tutorial: out-of-character coaching cues in brackets. Straightforward, Moderate, and Complex: hints emerge in-character only — through the parent's voice or observable child behaviour. The cascade tables in Section 7 supply both framings; use the in-character column except when Section 1 specifies Tutorial.
-
-**Tier progression.** Use the lowest tier that achieves redirection. If Tier 1 lands, no need for Tier 2. If Tier 1 does not land after a reasonable interval (typically two to three student turns), issue the next tier. Do not skip tiers unless severely off-course on mandatory content.
-
-**Hints are not free clues.** Do not release if the student is making progress and the domain has plenty of time left.
-
-**Hints are tracked.** Note which cascades fired and at what tier — visible to the debrief.
+**Tier framing scales with this scenario's complexity profile (Section 1).** Tutorial: out-of-character coaching cues in brackets. Standard, Moderate, Complex: hints emerge in-character only \u2014 through the parent's voice or observable child behaviour. Use the lowest tier that achieves redirection; do not skip tiers unless severely off-course. Hints are infrequent and tracked.
 
 ### 0.5 Exit conditions
 
 End by one of three pathways.
 
-**Wrap-up (student-judged exit).** The student synthesises observations and agrees a plan with the parent — summary, plan, follow-up, invitation for questions. Tentative thinking aloud is not wrap-up. The marker is a synthesis-and-plan move directed to the parent.
+**Wrap-up (student-judged exit).** The student synthesises observations and agrees a plan with the parent. When you believe the student has wrapped, confirm out-of-character:
+> *(Out of character \u2014 just to check, are you wrapping up here? Reply yes to move to debrief, or continue if you want to keep going.)*
 
-When you believe the student has wrapped, confirm out-of-character with:
-> *(Out of character — just to check, are you wrapping up the consultation here? Reply yes to move to debrief, or continue if you want to keep going.)*
+**Parent breakdown.** Rare; reserve for sustained partnership failure. First give one clear in-character signal; if the student course-corrects, continue with tolerance partially restored.
 
-If confirmed, proceed to debrief. If the student wants to continue, return to character.
-
-**Parent breakdown.** Rare in CFHN universal-service consultations. Reserve for sustained partnership failure. First give one clear in-character signal:
-> *(Parent:) "I'm not sure you're really hearing me about this. Maybe I should come back another day."*
-
-If the student course-corrects, continue with tolerance partially restored. If not, terminate realistically and debrief partnership failure.
-
-**Time-out.** Section 1 supplies the warning and hard-cap thresholds. At warning threshold, give a brief OOC note that the session is running long. At hard cap, terminate and debrief efficiency and prioritisation.
+**Time-out.** At the warning threshold give a brief OOC note; at the hard cap, terminate and debrief efficiency and prioritisation.
 
 ### 0.6 Per-domain feedback structure
 
-Debrief is structured by active practice domain — the domains Section 1 identifies as activated. Do not deliver feedback against generic categories. Address each active domain in turn.
+Debrief is structured by active practice domain. For each, classify performance: Strong / Developing / Limited / Unsafe Practice, using the anchors in Section 7. Each feedback element has three parts: the specific moment (quote or paraphrase); the classification implication; and the standards anchor (the MCaFHNA standard the moment connects to, cited by number).
 
-For each active domain, classify performance: Strong / Developing / Limited / Unsafe Practice. Use the anchors in Section 7 for the specific domain — they are concrete and scenario-specific.
-
-Each feedback element has three parts:
-
-- **The specific moment** — quote or paraphrase what the student said or did.
-- **The classification implication** — what this moment evidences against the domain.
-- **The standards anchor** — which MCaFHNA sub-criterion or sub-criteria the moment connects to, cited by number and short paraphrase: e.g. *"Standard 5.1 (expert clinical judgement in analysing assessment results)"* or *"Standard 2.3 (negotiated partnership in care decisions)."*
-
-Pick the sub-criteria the student's behaviour actually evidenced (positively or by omission); do not enumerate every active sub-criterion. Do not invent standards numbers — use only those listed in Section 7.
-
-If hints fired, name them in the trace.
-
-Balance positive and developmental feedback. Even at Limited or Unsafe classifications, name what the student did show.
+Pick the standards the student's behaviour actually evidenced; do not enumerate every active standard. Use only the standards listed in Section 7. If hints fired, name them in the trace. Balance positive and developmental feedback.
 
 ### 0.7 Debrief structure and exit-pathway framings
 
-Deliver in this order:
+Deliver in this order: (1) brief overall framing (2\u20133 sentences, state the exit pathway); (2) per-domain classifications with justifications; (3) critical findings reveal \u2014 surveillance/assessment opportunities not surfaced, complicating factors missed, partnership-failure patterns, anticipatory guidance not addressed, visit-mandatory content unaddressed, hint cascades that fired and at what tier; (4) overall summary (3\u20135 sentences); (5) concrete suggestions for next time (2\u20133 actionable items).
 
-1. **Brief overall framing** (2–3 sentences). State the exit pathway and how it affects the evaluation.
-2. **Per-domain classifications with justifications** (per 0.6 above).
-3. **Critical findings reveal.** State: surveillance and assessment opportunities not surfaced; psychosocial signals missed; partnership-failure patterns; anticipatory guidance opportunities not addressed; visit-mandatory content left unaddressed; hint cascades that fired and at what tier.
-4. **Overall summary** (3–5 sentences). Holistic assessment, key takeaway.
-5. **Concrete suggestions for next time** (2–3 specific items). Actionable, behavioural, tied to what happened.
+*Exit-pathway framings:* wrap-up \u2014 evaluate the synthesis and plan; parent breakdown \u2014 weight partnership-posture domains heavily; time-out \u2014 weight prioritisation and efficiency.
 
-**Exit-pathway framings:**
+Speak as a respectful CFHN clinical educator. Direct, specific, anchored in moments. Honest classifications, including low ones when warranted.`;
 
-- *Wrap-up exit:* evaluate the synthesis and plan itself alongside per-domain classifications. A clean wrap-up of a poor consultation is not Strong.
-- *Parent breakdown exit:* weight partnership-posture domains heavily (especially MCaFHNA Standard 2). Do not classify clinical domains highly even if assessment was sound.
-- *Time-out exit:* weight prioritisation and efficiency.
+/* ===================== engine ===================== */
+function composeScenario(anchors,seedStr){
+ const rng=rngFromInputs(anchors,seedStr);
+ const visit=VISIT_TYPES[anchors.visit_type];
+ const budget=COMPLEXITY_BUDGETS[anchors.complexity_profile];
+ const fam=FAMILY_COMPOSITIONS[anchors.family_composition];
+ const ctx=CULTURAL_CONTEXTS[anchors.cultural_context];
 
-Speak as a respectful CFHN clinical educator. Direct, specific, anchored in moments from the consultation. Honest classifications, including low ones when warranted.`;
+ const domains=visit.domains.map(id=>Object.assign({id},SURVEILLANCE_DOMAINS[id]));
+ const majorDomains=rngShuffle(rng,domains.filter(d=>d.problems.some(p=>p.severity==='major')));
+ const minorDomains=rngShuffle(rng,domains.filter(d=>d.problems.length>0 && d.problems.every(p=>p.severity!=='major')));
+ const pickProblem=(d,allowMajor)=>{const e=d.problems.filter(p=>allowMajor||p.severity!=='major');return rngShuffle(rng,e)[0];};
+ const issueDomains=[];
+ majorDomains.slice(0,budget.clinical_major).forEach(d=>issueDomains.push({domain:d,problem:pickProblem(d,true)}));
+ minorDomains.slice(0,budget.clinical_minor).forEach(d=>issueDomains.push({domain:d,problem:pickProblem(d,false)}));
+ const issueIds=new Set(issueDomains.map(x=>x.domain.id));
+ const normalDomains=domains.filter(d=>!issueIds.has(d.id));
 
-/* =========================================================================
-   ENGINE
-   ========================================================================= */
-function selectContentItems(anchors, rng) {
-  const visit = VISIT_TYPES[anchors.visit_type];
-  const budget = COMPLEXITY_BUDGETS[anchors.complexity_profile];
-  const fam = FAMILY_COMPOSITIONS[anchors.family_composition];
+ // complication tracks: gate by eligibility, drop placeholders, then cap
+ const live=arr=>arr.filter(c=>!c.placeholder);
+ const fc=rngShuffle(rng,live(FAMILY_COMPOSITION_COMPLICATIONS).filter(c=>c.family_compositions.includes(anchors.family_composition)));
+ const cald=rngShuffle(rng,live(CALD_COMPLICATIONS).filter(c=>c.cultural_contexts.includes(anchors.cultural_context)));
+ const ap=rngShuffle(rng,live(ALL_PURPOSE_COMPLICATIONS));
+ const complications=[].concat(fc.slice(0,budget.family_comp),cald.slice(0,budget.cald),ap.slice(0,budget.all_purpose));
 
-  // Filter pools by visit type
-  const availableSO = SURVEILLANCE_OPPORTUNITIES.filter(s => s.visit_types.includes(anchors.visit_type));
-  const availableAGO = AGO_POOL.filter(a => a.visit_types.includes(anchors.visit_type));
-  const availablePS = PSYCHOSOCIAL_SIGNALS.filter(p =>
-    p.visit_types.includes(anchors.visit_type) &&
-    p.family_compositions.includes(anchors.family_composition));
+ const names=selectNames(anchors,rng,fam,ctx);
+ return {anchors,seed:seedStr,visit,budget,fam,ctx,names,issueDomains,normalDomains,complications};
+}
 
-  // Separate SOs by severity, shuffle deterministically
-  const majorSO = rngShuffle(rng, availableSO.filter(s => s.severity === 'major'));
-  const minorSO = rngShuffle(rng, availableSO.filter(s => s.severity === 'minor'));
+function selectNames(anchors,rng,fam,ctx){
+ const pool=NAME_POOLS[anchors.cultural_context];
+ const surname=rngPick(rng,ctx.surname_pool);
+ const childName=rngPick(rng,pool.child_neutral.length?pool.child_neutral:pool.child_female);
+ let parentLeadName,parentLeadRole,partnerName,partnerRole;
+ if(fam.parent_role==='father'){parentLeadName=rngPick(rng,pool.parent_male);parentLeadRole='father';partnerName=null;partnerRole=null;}
+ else{parentLeadName=rngPick(rng,pool.parent_female);parentLeadRole='mother';partnerName=rngPick(rng,pool.parent_male);partnerRole='father';}
+ return {childName,surname,parentLeadName,parentLeadRole,partnerName,partnerRole};
+}
 
-  // Select SOs respecting budget
-  const selectedMajor = majorSO.slice(0, budget.surveillance_major_max);
-  const selectedMinor = minorSO.slice(0, budget.surveillance_minor_max);
-  const selectedSO = selectedMajor.concat(selectedMinor);
+/* ===================== compute helpers ===================== */
+function computeActiveDomains(s){
+ const d=new Set([1,2,7]); // anticipatory guidance, child assessment, wrap-up always active
+ s.issueDomains.forEach(x=>d.add(x.domain.practice_domain));
+ s.complications.forEach(c=>(c.domains||[]).forEach(n=>d.add(n)));
+ return Array.from(d).sort((a,b)=>a-b);
+}
+function computeStandards(s){
+ const set=new Set([7]);
+ s.issueDomains.forEach(x=>x.domain.standards.forEach(n=>set.add(n)));
+ s.normalDomains.forEach(d=>{}); // normal domains assessed but not the citation focus
+ s.complications.forEach(c=>(c.domains||[]).forEach(n=>set.add(n)));
+ // baseline universal standards at a 1-4 week check
+ [1,2,4,5].forEach(n=>set.add(n));
+ return Array.from(set).sort((a,b)=>a-b);
+}
 
-  // Select AGOs — always include linked AGOs for selected SOs, plus visit-mandatory AGOs up to budget
-  const requiredAGOIds = new Set();
-  selectedSO.forEach(so => availableAGO.filter(a => a.linked_so === so.id).forEach(a => requiredAGOIds.add(a.id)));
+/* ===================== brief composition ===================== */
+function renderBrief(s){
+ const {anchors,visit,budget,fam,ctx,names,issueDomains,normalDomains,complications}=s;
+ const L=[];const out=x=>L.push(x);
+ const ch=names.childName, lead=names.parentLeadName;
 
-  // Visit-mandatory AGOs: safe sleep and immunisation are always included where they exist
-  const visitMandatoryAGOIds = new Set();
-  availableAGO.forEach(a => {
-    if (a.id.startsWith('ago_safe_sleep') || a.id.startsWith('ago_immunisation')) {
-      visitMandatoryAGOIds.add(a.id);
-    }
+ out(`# Training Document \u2014 ${ch} ${names.surname}, ${visit.label}`);
+ out('');
+ out('**Prototype scenario.** Drafted content pending clinical sign-off; severity ratings, normal-range descriptions and hint cascades are provisional. Do not use with assessed students until reviewed.');
+ if(ctx.needs_review){out('');out(`**Cultural review required.** ${ctx.label} portrayal requires sign-off from a clinical educator with appropriate cultural competency review responsibility before use with students. Names, mob, country and language group are placeholders pending that review.`);}
+ out('');out('---');out('');
+
+ // SECTION 0
+ out(SECTION_0_HEADER);out('');
+ out('### 0.8 Scenario-specific procedural notes');out('');out('*Populated from this scenario\u2019s anchors:*');out('');
+ out(`- **Complexity profile is ${budget.label}.** ${budget.description} Hint framing: ${budget.hint_framing==='ooc'?'out-of-character coaching cues in brackets (Tutorial mode).':'in-character only \u2014 use the parent\u2019s-voice column from Section 7.'}`);
+ out(`- **Family composition: ${fam.label.toLowerCase()}.** ${fam.procedural_note}`);
+ out(`- **Every surveillance domain in this visit is assessed.** Most present within normal range and should be acknowledged and passed over briefly (Section 4). ${issueDomains.length} present as ${issueDomains.length===1?'an issue':'issues'} for the student to detect (Section 5).`);
+ out(`- **Caregiver tolerance baseline is ${budget.parent_forthcomingness==='high'?'high; the parent is more forthcoming than usual (Tutorial mode)':budget.parent_forthcomingness==='guarded'?'high but the parent is more guarded under the complexity load':'high'}.** ${budget.parent_forthcomingness==='guarded'?'Cool sooner on partnership failures than in lower-complexity scenarios.':'A single missed open question or moment of clinical hesitancy does not cool tolerance measurably.'}`);
+ out(`- **The infant does not speak.** Engage ${ch} only through observable behaviour. ${visit.age_specific_portrayal}`);
+ if(complications.length===0) out('- **No significant complicating factors in this scenario.** No mandatory-reporter cues to surface.');
+ else out(`- **Complicating factors present:** ${complications.map(c=>c.label.toLowerCase()).join('; ')}. Detail in Section 5.`);
+ if(ctx.needs_review) out(`- **CULTURAL REVIEW PENDING for ${ctx.label}.** Stay within general partnership posture; do not extrapolate cultural specificity. ${ctx.portrayal_notes}`);
+ else out(`- **Cultural context: ${ctx.label}.** ${ctx.portrayal_notes}`);
+ out('');out('---');out('');
+
+ // SECTION 1
+ out('## Section 1 \u2014 Scenario metadata');out('');
+ out('| Field | Value |');out('| --- | --- |');
+ out(`| Scenario ID | \`scn_${anchors.visit_type}_${anchors.complexity_profile}_${anchors.family_composition}_${anchors.cultural_context}\` |`);
+ out(`| Seed | \`${s.seed||'(derived)'}\` |`);
+ out(`| Visit type | ${visit.label} |`);
+ out(`| Service model | ${visit.service_model} |`);
+ out(`| Setting | ${visit.setting} |`);
+ out(`| Family composition | ${fam.label} (${fam.partner_exists_label}) |`);
+ out(`| Cultural / linguistic context | ${ctx.label} |`);
+ out(`| Complexity profile | ${budget.label} |`);
+ out(`| Active practice domains | ${computeActiveDomains(s).join('; ')} |`);
+ out(`| MCaFHNA standards in play | ${computeStandards(s).join(', ')} |`);
+ out(`| Issues to detect | ${issueDomains.length?issueDomains.map(x=>`${x.domain.label} \u2014 ${x.problem.label} (${x.problem.severity})`).join('; '):'None'} |`);
+ out(`| Complicating factors | ${complications.length?complications.map(c=>`${c.label} (${c.severity})`).join('; '):'None'} |`);
+ out(`| Domains assessed as normal | ${normalDomains.map(d=>d.label).join('; ')} |`);
+ out(`| Session warning threshold | 30 student messages |`);
+ out(`| Session hard cap | 50 student messages |`);
+ out('');out('---');out('');
+
+ // SECTION 2
+ out('## Section 2 \u2014 Student-facing opening');out('');
+ out(renderOpening(s));out('');
+ out(`> Begin the consultation. Greet the family, introduce yourself, and conduct the visit as you would in CFHN practice. Type both what you say aloud and any actions, observations, or examinations you perform in parentheses \u2014 for example: *(I sit at ${lead}\u2019s eye level and smile at ${ch}.)*`);
+ out('');out('---');out('');
+
+ // SECTION 3
+ out('## Section 3 \u2014 Agent role-play instructions');out('');
+ out('### Caregiver voice and emotional baseline');out('');out(renderCaregiverVoice(s));out('');
+ out(`### ${ch}\u2019s behaviour`);out('');out(renderChildBehaviour(s));out('');
+ out('### Partner');out('');out(renderPartner(s));out('');
+ out('### Parent-as-primary-client posture');out('');
+ out(`${lead} is the active conversational participant. The student speaks to ${lead}; ${lead} is the source of history, observation, and context, and the partner in any decision-making. ${lead} has expertise on ${ch} \u2014 they have been noticing things and bringing them in. Reward moves that ask ${lead}\u2019s observations before offering interpretation, that name ${lead}\u2019s expertise, that frame decisions collaboratively. Flag moves that talk about ${ch} without engaging ${lead}, position the nurse as the unilateral expert, or dismiss ${lead}\u2019s concerns.`);out('');
+ out('### Information disclosure tiers (this scenario)');out('');out(renderDisclosureTiers(s));out('');
+ out('### How parental responses shift with student communication quality');out('');out(renderToneShifts(s));
+ if(fam.parent_role==='mother'||fam.parent_role==='both'){out('');out('### Father / partner inclusion expectations (this scenario)');out('');out(renderFatherInclusion(s));}
+ out('');out('---');out('');
+
+ // SECTION 4
+ out('## Section 4 \u2014 Hidden visit content');out('');out(renderHiddenContent(s));out('');out('---');out('');
+
+ // SECTION 5
+ out('## Section 5 \u2014 Assessment opportunities and complicating factors');out('');
+ if(issueDomains.length){
+  issueDomains.forEach((x,i)=>{
+   const d=x.domain,p=x.problem;
+   out(`### Issue ${i+1} \u2014 ${d.label}: ${p.label} (${p.severity})`);out('');
+   out(`**Practice domain:** ${d.practice_domain}. **MCaFHNA standards:** ${d.standards.join(', ')}.`);out('');
+   out(`**How it presents in this scenario:** ${p.manifestation}`);out('');
+   out(`**Knowledge base the student should bring:** ${p.knowledge_base}`);out('');
+   out(`**What the student should advise / do:** ${p.recommendations}`);out('');
+   out(`**What warrants follow-up or referral:** ${p.referral}`);out('');
+   if(d.family_centred_communication&&d.family_centred_communication.length){out('**Family-centred communication for this domain:**');d.family_centred_communication.forEach(b=>out(`- ${b}`));out('');}
+   if(d.strengths_based&&d.strengths_based.length){out('**Strengths-based approach for this domain:**');d.strengths_based.forEach(b=>out(`- ${b}`));out('');}
+   if(d.anticipatory_guidance&&d.anticipatory_guidance.length){out('**Anticipatory guidance for this domain:**');d.anticipatory_guidance.forEach(b=>out(`- ${b}`));out('');}
+   if(d.broad_psychosocial) {out(`**Broad psychosocial signal:** ${d.broad_psychosocial}`);out('');}
   });
+ } else { out('*No standalone issues in this scenario. The student should still assess every domain and confirm normal findings (Section 4).*');out(''); }
 
-  // For postnatal home visit, maternal recovery is mandatory; for 6-month, dental is included
-  if (anchors.visit_type === 'postnatal_home') {
-    availableAGO.forEach(a => { if (a.id === 'ago_maternal_recovery') visitMandatoryAGOIds.add(a.id); });
-  }
-  if (anchors.visit_type === 'six_month') {
-    availableAGO.forEach(a => { if (a.id === 'ago_dental') visitMandatoryAGOIds.add(a.id); });
-  }
-
-  const mustHaveAGO = availableAGO.filter(a => requiredAGOIds.has(a.id) || visitMandatoryAGOIds.has(a.id));
-  const remainingAGOSlots = Math.max(0, budget.ago_max - mustHaveAGO.length);
-  const optionalAGO = rngShuffle(rng, availableAGO.filter(a => !requiredAGOIds.has(a.id) && !visitMandatoryAGOIds.has(a.id)));
-  const selectedAGO = mustHaveAGO.concat(optionalAGO.slice(0, remainingAGOSlots));
-
-  // Select psychosocial signals
-  const shuffledPS = rngShuffle(rng, availablePS);
-  const selectedPS = shuffledPS.slice(0, budget.psychosocial_signal_max);
-
-  return { visit, budget, fam, selectedSO, selectedAGO, selectedPS };
-}
-
-function selectNames(anchors, rng) {
-  const ctx = anchors.cultural_context;
-  const pool = NAME_POOLS[ctx];
-  const surnames = CULTURAL_CONTEXTS[ctx].surname_pool;
-  const fam = FAMILY_COMPOSITIONS[anchors.family_composition];
-
-  const childName = rngPick(rng, pool.child_neutral.length > 0 ? pool.child_neutral : pool.child_female);
-  const surname = rngPick(rng, surnames);
-
-  let parentLeadName, parentLeadRole, partnerName, partnerRole;
-
-  if (fam.parent_role === 'mother') {
-    parentLeadName = rngPick(rng, pool.parent_female);
-    parentLeadRole = 'mother';
-    partnerName = rngPick(rng, pool.parent_male);
-    partnerRole = 'father';
-  } else if (fam.parent_role === 'father') {
-    parentLeadName = rngPick(rng, pool.parent_male);
-    parentLeadRole = 'father';
-    partnerName = null;
-    partnerRole = null;
-  } else {
-    parentLeadName = rngPick(rng, pool.parent_female);
-    parentLeadRole = 'mother';
-    partnerName = rngPick(rng, pool.parent_male);
-    partnerRole = 'father';
-  }
-
-  return { childName, surname, parentLeadName, parentLeadRole, partnerName, partnerRole };
-}
-
-/* =========================================================================
-   BRIEF COMPOSITION
-   ========================================================================= */
-function renderBrief(anchors, content, names, seedStr) {
-  const { visit, budget, fam, selectedSO, selectedAGO, selectedPS } = content;
-  const ctx = CULTURAL_CONTEXTS[anchors.cultural_context];
-
-  const lines = [];
-  const out = (s) => lines.push(s);
-
-  // Top matter
-  out(`# Training Document — ${names.childName} ${names.surname}, ${visit.label}`);
-  out('');
-  out('**Prototype scenario.** This Training Document is prototype-only and pending clinical sign-off. Do not use with assessed students.');
-  if (visit.prototype_note) {
-    out('');
-    out(`**Note:** ${visit.prototype_note}.`);
-  }
-  if (ctx.needs_review) {
-    out('');
-    out(`**Cultural review required.** ${ctx.label} portrayal requires sign-off from a clinical educator with appropriate cultural competency review responsibility before use with students.`);
-  }
-  out('');
-  out('---');
-  out('');
-
-  // SECTION 0
-  out(SECTION_0_HEADER);
-  out('');
-  out('### 0.8 Scenario-specific procedural notes');
-  out('');
-  out('*Populated from this scenario\'s anchors:*');
-  out('');
-  out(`- **Complexity profile is ${budget.label}.** ${budget.description} Hint framing for this scenario: ${budget.hint_framing === 'ooc' ? 'out-of-character coaching cues in brackets (Tutorial mode).' : 'in-character only — use the parent\'s-voice column from Section 7\'s cascade tables.'}`);
-  out(`- **Family composition: ${fam.label.toLowerCase()}.** ${fam.procedural_note}`);
-  out(`- **Caregiver tolerance baseline is ${budget.parent_forthcomingness === 'high' ? 'high and the parent is more forthcoming than usual (Tutorial mode)' : budget.parent_forthcomingness === 'guarded' ? 'high but the parent is more guarded under the complexity load' : 'high'}.** ${budget.parent_forthcomingness === 'guarded' ? 'Cool sooner on partnership failures than in lower-complexity scenarios.' : 'A single missed open question or a moment of clinical hesitancy does not cool tolerance measurably. Cool only on sustained partnership failure.'}`);
-  out(`- **The infant does not speak.** Engage ${names.childName} only through observable behaviour. ${visit.age_specific_portrayal}`);
-  if (selectedPS.length === 0) {
-    out('- **There are no significant psychosocial signals in this scenario.** No mandatory-reporter cues to surface.');
-  } else {
-    out(`- **Psychosocial signals present:** ${selectedPS.map(p => p.label.toLowerCase()).join('; ')}. Detail in Section 5.`);
-  }
-  if (ctx.needs_review) {
-    out(`- **CULTURAL REVIEW PENDING for ${ctx.label} portrayal.** Stay within general partnership posture; do not extrapolate cultural specificity. ${ctx.portrayal_notes}`);
-  } else {
-    out(`- **Cultural context: ${ctx.label}.** ${ctx.portrayal_notes}`);
-  }
-  out('');
-  out('---');
-  out('');
-
-  // SECTION 1 — Scenario metadata
-  out('## Section 1 — Scenario metadata');
-  out('');
-  out('| Field | Value |');
-  out('| --- | --- |');
-  out(`| Scenario ID | \`scn_${anchors.visit_type}_${anchors.complexity_profile}_${anchors.family_composition}_${anchors.cultural_context}\` |`);
-  out(`| Seed | \`${seedStr}\` |`);
-  out(`| Visit type | ${visit.label} |`);
-  out(`| Service model | ${visit.service_model} |`);
-  out(`| Setting | ${visit.setting} |`);
-  out(`| Family composition | ${fam.label} (${fam.partner_exists_label}) |`);
-  out(`| Cultural / linguistic context | ${ctx.label}${ctx.needs_review ? ' (REVIEW PENDING)' : ''} |`);
-  out(`| Complexity profile | ${budget.label} |`);
-  out(`| Active practice domains | ${computeActiveDomains(selectedSO, selectedAGO, selectedPS).join('; ')} |`);
-  out(`| Standards activation profile | ${computeStandardsProfile(selectedSO, selectedAGO, selectedPS, anchors.visit_type)} |`);
-  out(`| Surveillance opportunities | ${selectedSO.length > 0 ? selectedSO.map(s => `${s.label} (${s.severity})`).join('; ') : 'None'} |`);
-  out(`| Psychosocial signals | ${selectedPS.length > 0 ? selectedPS.map(p => `${p.label} (${p.severity})`).join('; ') : 'None'} |`);
-  out(`| Anticipatory guidance opportunities | ${selectedAGO.map(a => a.label).join('; ')} |`);
-  out(`| Subtle safety signals | None |`);
-  out(`| Hint cascades authored | ${computeCascadeList(selectedSO, selectedAGO)} |`);
-  out(`| Session warning threshold | 30 student messages |`);
-  out(`| Session hard cap | 50 student messages |`);
-  out('');
-  out('---');
-  out('');
-
-  // SECTION 2 — Student-facing opening
-  out('## Section 2 — Student-facing opening');
-  out('');
-  out(renderOpening(visit, fam, names));
-  out('');
-  out(`> Begin the consultation. Greet the family, introduce yourself, and conduct the visit as you would in CFHN practice. Type both what you say aloud and any actions, observations, or examinations you perform in parentheses — for example: *(I sit at the parent's eye level and smile at ${names.childName}.)*`);
-  out('');
-  out('---');
-  out('');
-
-  // SECTION 3 — Agent role-play instructions
-  out('## Section 3 — Agent role-play instructions');
-  out('');
-  out('### Caregiver voice and emotional baseline');
-  out('');
-  out(renderCaregiverVoice(visit, fam, names, budget, selectedPS));
-  out('');
-  out(`### ${names.childName}'s behaviour`);
-  out('');
-  out(renderChildBehaviour(visit, names, selectedSO));
-  out('');
-  out('### Partner');
-  out('');
-  out(renderPartner(fam, names));
-  out('');
-  out('### Parent-as-primary-client posture');
-  out('');
-  out(`${names.parentLeadName} is the active conversational participant. The student speaks to ${names.parentLeadName}; ${names.parentLeadName} is the source of history, observation, and context; ${names.parentLeadName} is the partner in any decision-making. ${names.parentLeadName} has expertise on ${names.childName} — they have been noticing things and bringing them in.`);
-  out('');
-  out(`Reward student moves that ask ${names.parentLeadName}'s observations before offering interpretation, that name ${names.parentLeadName}'s expertise, that frame decisions collaboratively. Flag student moves that talk about ${names.childName} without engaging ${names.parentLeadName}, that position the nurse as the unilateral expert delivering verdicts, or that dismiss ${names.parentLeadName}'s concerns without engagement.`);
-  out('');
-  out('### Information disclosure tiers (this scenario)');
-  out('');
-  out(renderDisclosureTiers(visit, fam, names, budget, selectedPS));
-  out('');
-  out('### How parental responses shift with student communication quality');
-  out('');
-  out(renderToneShifts(names, budget));
-  if (fam.parent_role === 'mother' || fam.parent_role === 'both') {
-    out('');
-    out('### Father / partner inclusion expectations (this scenario)');
-    out('');
-    out(renderFatherInclusion(fam, names));
-  }
-  out('');
-  out('---');
-  out('');
-
-  // SECTION 4 — Hidden visit content
-  out('## Section 4 — Hidden visit content');
-  out('');
-  out(renderHiddenContent(visit, fam, names, ctx, selectedSO));
-  out('');
-  out('---');
-  out('');
-
-  // SECTION 5 — Surveillance and assessment opportunities
-  out('## Section 5 — Surveillance and assessment opportunities');
-  out('');
-  if (selectedSO.length > 0) {
-    selectedSO.forEach((so, i) => {
-      out(`### Surveillance opportunity ${i + 1} — ${so.label} (${so.severity})`);
-      out('');
-      out(`**Domain:** ${so.domain}.`);
-      out('');
-      out(`**Manifestation in this scenario:** ${so.manifestation}`);
-      out('');
-      out(`**What the student should ideally notice:** ${so.ideal_notice}`);
-      out('');
-      out(`**What the student should ask about or assess:** ${so.ideal_ask}`);
-      out('');
-      out(`**What the student should advise:** ${so.ideal_advise}`);
-      out('');
-      out(`**What warrants follow-up or referral:** ${so.referral}`);
-      out('');
-      out(`**Parental anxiety management:** ${so.parental_anxiety_management}`);
-      out('');
-    });
-  } else {
-    out('*No standalone surveillance opportunities in this scenario. The student should still perform comprehensive assessment per visit-mandatory content.*');
-    out('');
-  }
-
-  // AGOs in section 5
-  selectedAGO.forEach((ago, i) => {
-    out(`### Anticipatory guidance opportunity ${i + 1} — ${ago.label}`);
-    out('');
-    out(`**Domain:** ${ago.domain}.`);
-    out('');
-    if (ago.linked_so) {
-      out(`*Bundled with the linked surveillance opportunity above.*`);
-    } else {
-      out(`**Content:** ${ago.content_summary}`);
-    }
-    out('');
+ if(complications.length){
+  complications.forEach((c,i)=>{
+   out(`### Complicating factor ${i+1} \u2014 ${c.label} (${c.severity})`);out('');
+   out(`**Activates practice domains:** ${(c.domains||[]).join(', ')}.`);out('');
+   out(`**Manifestation:** ${c.manifestation}`);out('');
+   out(`**Ideal response:** ${c.ideal_response}`);out('');
+   out(`**Threshold:** ${c.threshold}`);out('');
+   out(`**Risk:** ${c.risk}`);out('');
   });
+ }
+ if(visit.mandatory_guidance&&visit.mandatory_guidance.length){
+  out('### Visit-mandatory anticipatory guidance (covered regardless of issues)');out('');
+  visit.mandatory_guidance.forEach(g=>{out(`**${g.label}.** ${g.content}`);out('');});
+ }
+ out('### Subtle safety signals');out('');out('None in this scenario.');out('');out('---');out('');
 
-  // Psychosocial signals in section 5
-  if (selectedPS.length > 0) {
-    selectedPS.forEach((ps, i) => {
-      out(`### Psychosocial signal ${i + 1} — ${ps.label} (${ps.severity})`);
-      out('');
-      out(`**Domain:** ${ps.domain_primary} (primary), ${ps.domain_secondary} (secondary).`);
-      out('');
-      out(`**Manifestation:** ${ps.manifestation}`);
-      out('');
-      out(`**Ideal response:** ${ps.ideal_response}`);
-      out('');
-      out(`**Threshold:** ${ps.threshold}`);
-      out('');
-      out(`**Risk:** ${ps.risk}`);
-      out('');
-    });
-  }
+ // SECTION 6
+ out('## Section 6 \u2014 Expected student performance');out('');out(renderExpectedPerformance(s));out('');out('---');out('');
 
-  out('### Subtle safety signals');
-  out('');
-  out('None in this scenario.');
-  out('');
-  out('---');
-  out('');
-
-  // SECTION 6 — Expected student performance
-  out('## Section 6 — Expected student performance');
-  out('');
-  out(renderExpectedPerformance(visit, fam, names, selectedSO, selectedAGO, selectedPS));
-  out('');
-  out('---');
-  out('');
-
-  // SECTION 7 — Formative feedback rubric
-  out('## Section 7 — Formative feedback rubric');
-  out('');
-  out(renderRubric(visit, fam, names, selectedSO, selectedAGO, selectedPS, budget));
-  out('');
-  out('---');
-  out('');
-  out('*End of training document.*');
-
-  return lines.join('\n');
+ // SECTION 7
+ out('## Section 7 \u2014 Formative feedback rubric');out('');out(renderRubric(s));out('');out('---');out('');
+ out('*End of training document.*');
+ return L.join('\n');
 }
 
-function computeActiveDomains(selectedSO, selectedAGO, selectedPS) {
-  const domains = new Set();
-  selectedSO.forEach(s => domains.add(s.domain));
-  selectedAGO.forEach(a => domains.add(a.domain));
-  selectedPS.forEach(p => { domains.add(p.domain_primary); domains.add(p.domain_secondary); });
-  // Domain 7 (evaluates outcomes) is always activated by the consultation wrap-up
-  domains.add(7);
-  return Array.from(domains).sort((a,b) => a - b).map(d => `${d}`);
+function renderOpening(s){
+ const {visit,fam,names}=s;const ch=names.childName,lead=names.parentLeadName;
+ const home=/home/i.test(visit.setting);
+ let o=`You are a postgraduate Child and Family Health Nursing student conducting a routine ${visit.label.toLowerCase()} ${home?'at the family\u2019s home':'at a Community Health Centre clinic'}. `;
+ if(fam.parent_role==='both') o+=`${lead} and ${names.partnerName} ${names.surname} ${home?'are home for':'have come in for'} ${ch}\u2019s visit. `;
+ else o+=`${lead} ${names.surname} ${home?'is home for':'has come in for'} ${ch}\u2019s visit. `;
+ o+=`${ch} is ${visit.age_label}. This is ${lead}\u2019s first child.\n\n`;
+ o+=home?`You are visiting at the family\u2019s home. The living space is comfortable and organised; you are welcomed in and offered a seat.\n\n`:`The clinic room is set up with a baby scale, length board, head-circumference tape, a low examining mat, and a chair. The NSW Blue Book (Personal Health Record) is on the desk.\n\n`;
+ if(fam.parent_role==='both') o+=`${lead} is holding ${ch}; ${names.partnerName} is beside them. They look up as you ${home?'settle in':'come in'}.`;
+ else o+=`${lead} is holding ${ch}, who is awake and alert, and looks up as you ${home?'settle in':'come in'}.`;
+ return o;
 }
 
-function computeStandardsProfile(selectedSO, selectedAGO, selectedPS, visitType) {
-  // Simplified mapping. In production, this would be authored per content item.
-  // For prototype: a sensible default profile per visit type.
-  const profiles = {
-    postnatal_home: '1.5, 1.9, 1.11, 1.12; 2.3, 2.4, 2.5, 2.6; 4.3, 4.5, 4.6, 4.7; 5.1, 5.3, 5.4; 6.18, 6.19, 6.21, 6.23; 7.1, 7.3',
-    six_eight_week: '1.5, 1.9, 1.11, 1.12; 2.3, 2.4, 2.5, 2.6; 4.4, 4.5, 4.6, 4.7, 4.9; 5.1, 5.3, 5.4; 6.20, 6.21, 6.22, 6.23, 6.24; 7.1, 7.3',
-    six_month: '1.5, 1.9, 1.11; 2.3, 2.4, 2.6; 4.4, 4.6, 4.7, 4.9; 5.1, 5.3, 5.4; 6.20, 6.21, 6.22, 6.24; 7.1, 7.3'
-  };
-  return profiles[visitType] || profiles.six_eight_week;
+function renderCaregiverVoice(s){
+ const {budget,names,complications}=s;const lead=names.parentLeadName,ch=names.childName;
+ let v=`${lead} is a first-time ${names.parentLeadRole} in their late twenties or early thirties. ${budget.parent_forthcomingness==='high'?'They are warm, articulate and forthcoming \u2014 Tutorial mode means they volunteer relevant information readily and answer vague questions usefully.':budget.parent_forthcomingness==='guarded'?'They are warm but somewhat guarded today \u2014 the visit carries more weight than usual and they watch the student\u2019s posture carefully.':'They are warm, articulate and engaged. Baseline trust in the CFHN service is high.'} ${lead} has expertise on ${ch} \u2014 they have been observing and bringing concerns to make sense of them.\n\n`;
+ if(complications.length) v+=`Underneath the warmth there is the texture flagged in Section 5: ${complications.map(c=>c.label.toLowerCase()).join(' and ')}. Surface this naturally through ${lead}\u2019s tone and word choice; do not announce it.\n\n`;
+ else v+=`There are no significant underlying psychosocial concerns beyond normal new-parent adjustment.\n\n`;
+ v+=`Communication style: full sentences; plain language; willing to use clinical terms heard before but will check understanding. Emotionally expressive \u2014 small smiles, occasional self-deprecating humour. Looks at ${ch} frequently while talking; responsive to ${ch}\u2019s cues.`;
+ return v;
 }
 
-function computeCascadeList(selectedSO, selectedAGO) {
-  const cascades = [];
-  selectedSO.forEach(s => cascades.push(s.label.toLowerCase()));
-  selectedAGO.forEach(a => { if (a.hint_cascade) cascades.push(a.label.toLowerCase()); });
-  cascades.push('follow-up planning (Domain 7)');
-  return cascades.join('; ');
+function renderChildBehaviour(s){
+ const {visit,names,issueDomains}=s;const ch=names.childName;
+ let b=`${ch} is ${visit.age_label} and behaves age-appropriately. ${ch} does not speak. ${visit.age_specific_portrayal}\n\n`;
+ b+=`Baseline state: settled in the parent\u2019s arms initially; brief alert periods; may turn toward voices and track a face intermittently. When clothes are removed for examination ${ch} may become unsettled but settles quickly when comforted. Reflexes when elicited are brisk and age-appropriate; fontanelles unremarkable.\n\n`;
+ const obs=issueDomains.filter(x=>x.problem.observable);
+ if(obs.length){
+  b+=`**Observable findings tied to this scenario\u2019s issues** (reveal only when the student looks/assesses, per Section 0.1):\n\n`;
+  obs.forEach(x=>b+=`- ${x.problem.observable.replace(/\[child\]/g,ch)}\n`);
+ } else {
+  b+=`The issues in this scenario surface mainly through ${names.parentLeadName}\u2019s report rather than observable signs (see Sections 4 and 5).`;
+ }
+ return b.trim();
 }
 
-function renderOpening(visit, fam, names) {
-  const settingDesc = visit.setting;
-  let opening = `You are a postgraduate Child and Family Health Nursing student conducting a routine ${visit.label.toLowerCase()} at a ${settingDesc.toLowerCase()}. `;
-  if (fam.parent_role === 'both') {
-    opening += `${names.parentLeadName} and ${names.partnerName} ${names.surname} have arrived for their ${names.childName === 'their child' ? 'child' : 'daughter'}'s check. `;
-  } else if (fam.parent_role === 'father') {
-    opening += `${names.parentLeadName} ${names.surname} has arrived for ${names.childName}'s check. `;
-  } else {
-    opening += `${names.parentLeadName} ${names.surname} has arrived for ${names.childName}'s check. `;
-  }
-  opening += `${names.childName} is ${visit.age_label}. This is ${names.parentLeadName}'s ${names.childName === '[child name per cultural review]' ? 'first' : 'first'} child.`;
-  opening += '\n\n';
-
-  if (visit.id === 'postnatal_home' || visit.label.includes('home visit')) {
-    opening += `You are visiting the family at their home. The living space is comfortable and organised; you are welcomed in. ${names.parentLeadName} offers you a seat.`;
-  } else {
-    opening += `The clinic room is set up with a baby weighing scale, length board, head circumference tape, a low examining mat, and a chair. The Personal Health Record (NSW Blue Book) is on the desk.`;
-  }
-  opening += '\n\n';
-  if (fam.parent_role === 'both') {
-    opening += `${names.parentLeadName} is seated holding ${names.childName}; ${names.partnerName} is beside them. They look up as you come in.`;
-  } else {
-    opening += `${names.parentLeadName} is seated, holding ${names.childName}, who is awake and alert. ${names.parentLeadName} looks up as you come in and smiles.`;
-  }
-
-  return opening;
+function renderPartner(s){
+ const {fam,names}=s;const lead=names.parentLeadName,ch=names.childName;
+ if(fam.parent_role==='both') return `${names.partnerName} is present today, contributes observations, occasionally asks questions, and is generally supportive. The student should engage both parents \u2014 eye contact, questions, validation. ${names.partnerName} is never invisible; failing to engage ${names.partnerName} at all is a partnership omission to flag in debrief.`;
+ if(fam.parent_role==='father') return `${lead} is the sole parent presenting today and the primary client. Avoid assumptions about a co-parent\u2019s presence, absence or involvement. If the student asks about co-parenting or family support, ${lead} answers from their own circumstances; do not invent details. Engage ${lead} as the primary client with full partnership posture.`;
+ return `${names.partnerName} (${ch}\u2019s father) is not present today; he works during the week and is involved in evenings and weekends. ${lead} will refer to ${names.partnerName} warmly and competently when asked. Asking about ${names.partnerName}\u2019s involvement and how he is doing is appropriate practice and contributes to the Domain 3/5 anchors.`;
 }
 
-function renderCaregiverVoice(visit, fam, names, budget, selectedPS) {
-  let voice = `${names.parentLeadName} is a first-time ${names.parentLeadRole} in their late twenties or early thirties. ${budget.parent_forthcomingness === 'high'
-    ? `They are warm, articulate, engaged, and forthcoming — Tutorial mode means they volunteer relevant information readily and answer vague questions usefully.`
-    : budget.parent_forthcomingness === 'guarded'
-      ? `They are warm but somewhat guarded today — the consultation carries more weight than usual and they are watching the student's posture carefully.`
-      : `They are warm, articulate, and engaged. Baseline trust in the CFHN service is high.`} ${names.parentLeadName} has expertise on ${names.childName} — they have been observing and bringing concerns to be helped to make sense of them.\n\n`;
-
-  if (selectedPS.length > 0) {
-    voice += `Underneath the warmth there is the psychosocial texture flagged in Section 5: ${selectedPS.map(p => p.label.toLowerCase()).join(' and ')}. Surface this naturally through ${names.parentLeadName}'s tone and word choice; do not announce it.\n\n`;
-  } else {
-    voice += `There are no significant underlying psychosocial concerns in this scenario beyond normal new-parent adjustment.\n\n`;
-  }
-
-  voice += `Communication style: full sentences; plain language; willing to use clinical terms heard before but will check understanding. Emotionally expressive — small smiles, occasional self-deprecating humour. Looks at ${names.childName} frequently while talking; responsive to ${names.childName}'s cues.`;
-
-  return voice;
+function renderDisclosureTiers(s){
+ const {names,issueDomains}=s;const lead=names.parentLeadName,ch=names.childName;
+ let t=`**Volunteer freely.** At the opening or in early answers, ${lead} will raise general newborn adjustment and, lightly, the concern(s) underlying this scenario\u2019s issues \u2014 in their own words, not as a clinical handover:\n\n`;
+ if(issueDomains.length) issueDomains.forEach(x=>t+=`- ${x.problem.hint_cascade[0].ic}\n`);
+ else t+=`- General reassurance-seeking about whether ${ch} is doing well.\n`;
+ t+=`- That family supports are in place.\n\n`;
+ t+=`**Reveal when asked.** Clear, accurate answers on direct questioning to: feeding details; output; sleep / settling; birth history; past medical history; immunisation status; family medical history; their own wellbeing at a general level; partner and family support; prior CFHN engagement.\n\n`;
+ t+=`**Reveal when probed.** Specific answers on specific probing to: the texture of their concerns; specifics of observations about ${ch}; their own mood and load on close, gentle questioning (within any complicating-factor thresholds in Section 5).\n\n`;
+ t+=`**Never volunteer directly.** ${lead} will not announce clinical interpretation, recommendations, or a synthesis of the visit \u2014 these are the student\u2019s work to bring.`;
+ return t;
 }
 
-function renderChildBehaviour(visit, names, selectedSO) {
-  let beh = `${names.childName} is ${visit.age_label} and behaves age-appropriately. ${names.childName} does not speak${visit.age_weeks >= 52 ? ' in full sentences (toddler-level fragments only if applicable)' : ''}. ${visit.age_specific_portrayal}\n\n`;
+function renderToneShifts(s){
+ const {budget,names}=s;const lead=names.parentLeadName;
+ let sh=`${lead}\u2019s tone responds to partnership posture. When the student asks ${lead}\u2019s observations first, names their expertise, normalises reassurance-seeking without dismissing it, and frames decisions collaboratively \u2014 ${lead} opens up, elaborates more freely, becomes visibly warmer.\n\n`;
+ sh+=`When the student talks past ${lead}, dismisses concerns as anxiety, delivers verdicts without inviting their view, uses jargon without explanation, or moves quickly through clinical content without engaging their observations \u2014 ${lead} becomes more reserved, gives shorter answers, holds back concerns.\n\n`;
+ sh+=budget.parent_forthcomingness==='guarded'?`Baseline tolerance in this complex scenario is lower than typical \u2014 partnership failures cool tolerance noticeably faster. Reach parent breakdown only on sustained failure, but allow noticeable cooling on individual missteps.`:`Baseline tolerance is high. ${lead} will not reach the parent-judged exit threshold without sustained, severe partnership failure.`;
+ return sh;
+}
 
-  beh += `Baseline state at the visit: settled in ${names.parentLeadName}'s arms initially; engages observable behaviour appropriate to age. `;
-  if (visit.age_weeks <= 8) {
-    beh += `${names.childName} may turn toward voices, track faces intermittently. An unprompted social smile may emerge if engaged warmly.\n\n`;
-  } else if (visit.age_weeks <= 30) {
-    beh += `${names.childName} is interested in the room and the new person, may smile or babble, may show stranger awareness depending on warm-up.\n\n`;
-  }
+function renderFatherInclusion(s){
+ const {fam,names}=s;const lead=names.parentLeadName;
+ if(fam.parent_role==='both') return `${names.partnerName} is in the room. Assessable behaviours: engaging ${names.partnerName} directly (eye contact, questions, validation); asking about ${names.partnerName}\u2019s observations; including ${names.partnerName} in any plan; not treating ${names.partnerName} as a passive presence.`;
+ return `With ${names.partnerName} not present, the assessable behaviours are: asking about ${names.partnerName} appropriately (involvement; how he is doing; how the parenting partnership is going); including ${names.partnerName} in any plan where relevant; not assuming he is uninvolved without information. Failure to enquire about ${names.partnerName} at all is a partnership omission to flag.`;
+}
 
-  beh += `When clothes are removed for examination: ${names.childName} may become unsettled but settles quickly when comforted. Reflexes when elicited are brisk and age-appropriate. Fontanelles unremarkable.\n\n`;
-
-  // SO-specific behaviour
-  selectedSO.forEach(so => {
-    if (so.id === 'so_motor_head_control_tummy_time') {
-      beh += `**Motor / posture:** Head lag noticeable on pull-to-sit. Tummy-time aversion — ${names.childName} pushes off briefly when placed prone, then cries within a minute or two, easily soothed when comforted.\n\n`;
-    }
-    if (so.id === 'so_skin_nevus_simplex') {
-      beh += `**Skin:** A flat pink marking on the back of ${names.childName}'s neck extending up into the hairline (nevus simplex).\n\n`;
-    }
-    if (so.id === 'so_skin_milia_neonatal_acne') {
-      beh += `**Skin:** Several small white pimple-like lesions on ${names.childName}'s cheeks and a few on the shoulders (milia / neonatal acne).\n\n`;
-    }
+function renderHiddenContent(s){
+ const {visit,names,ctx,issueDomains,normalDomains}=s;const ch=names.childName,lead=names.parentLeadName;
+ let c=`### Specific measurements and observations for this instance\n\n`;
+ const w=visit.age_weeks;
+ if(w<=4){
+  c+=`**Growth at birth:** Weight 3.3 kg; length 50.0 cm; head circumference 34.5 cm.\n\n`;
+  c+=`**Growth at this visit (${visit.age_label}):** Weight 3.5 kg (regained past birth weight); length 51.5 cm; head circumference 35.5 cm.\n\n`;
+  c+=`**Growth interpretation (agent reference only, never volunteered):** ${ch} has regained to above birth weight and is tracking appropriately for age. Within healthy range.\n\n`;
+ } else if(w<=8){
+  c+=`**Growth at birth:** Weight 3.3 kg; length 50.1 cm; head circumference 34.5 cm.\n\n`;
+  c+=`**Growth at this visit (${visit.age_label}):** Weight 4.2 kg (around the 22nd centile); length 55.5 cm; head circumference 38 cm.\n\n`;
+  c+=`**Growth interpretation (agent reference only, never volunteered):** ${ch} is tracking along their own curve; weight regain appropriate; within healthy range and consistent with trajectory.\n\n`;
+ } else {
+  c+=`**Growth at this visit (${visit.age_label}):** Weight 7.4 kg (~50th centile); length 67 cm; head circumference 43 cm.\n\n`;
+  c+=`**Growth interpretation (agent reference only, never volunteered):** Growth tracking well along the expected curve, consistent with previous measurements.\n\n`;
+ }
+ c+=`**Reflexes:** Age-appropriate. **Fontanelles:** Unremarkable.${w<=4?' **Umbilical stump:** Recently separated, healing well.':''}\n\n`;
+ c+=`### Domains assessed as normal (acknowledge and pass over briefly)\n\n`;
+ c+=`*These present within normal range. If the student assesses them, confirm the normal finding plainly and move on; do not manufacture a concern.*\n\n`;
+ normalDomains.forEach(d=>c+=`- **${d.label}:** ${d.normal_presentation}\n`);
+ c+=`\n### Domains presenting as issues (the findings to be detected)\n\n`;
+ if(issueDomains.length){
+  issueDomains.forEach(x=>{
+   const d=x.domain,p=x.problem;
+   c+=`- **${d.label} \u2014 ${p.label}:** ${p.manifestation}${p.observable?` Observable on assessment: ${p.observable.replace(/\[child\]/g,ch)}`:''} Full detail in Section 5.\n`;
   });
-
-  return beh.trim();
+ } else c+=`- None; this is a clean check where the skill is confirming everything is in range.\n`;
+ c+=`\n### Family texture\n\n`;
+ c+=`- **${lead} ${names.surname}**, ${names.parentLeadRole}, late twenties or early thirties, first-time parent.\n`;
+ c+=`- **${ch} ${names.surname}**, ${visit.age_label}, first child.\n`;
+ if(names.partnerName&&s.fam.parent_role!=='father') c+=`- **${names.partnerName} ${names.surname}**, ${names.partnerRole}${s.fam.parent_role==='both'?' (present today)':' (not present today; works during the week)'}.\n`;
+ if(s.fam.parent_role==='father') c+=`- **Co-parent:** not present in this scenario; do not invent details unless the student asks and ${lead} provides them.\n`;
+ c+=`- **Extended family:** at least one supportive grandparent in proximity.\n`;
+ c+=`- **Prior CFHN engagement:** ${visit.age_weeks<=4?'this is an early postnatal home visit; the birth admission and discharge are recent':'at least one prior CFHN visit (postnatal home visit, plus any subsequent routine checks)'}.\n\n`;
+ c+=`### Cultural / linguistic specifics\n\n${ctx.description}\n`;
+ return c;
 }
 
-function renderPartner(fam, names) {
-  if (fam.parent_role === 'both') {
-    return `${names.partnerName} is present in the consultation today. ${names.partnerName} contributes observations, occasionally asks questions, and is generally supportive. The student should engage both parents — eye contact, questions, validation. ${names.partnerName} is never invisible. Failing to engage ${names.partnerName} at all is a partnership omission to flag in debrief.`;
-  }
-  if (fam.parent_role === 'father') {
-    return `${names.parentLeadName} is the sole parent presenting today and the primary client. Avoid assumptions about a co-parent's presence, absence, or involvement. If the student asks about co-parenting or family support, ${names.parentLeadName} answers from their own circumstances without prompting; do not invent details. The Father/partner inclusion variable does not apply in the usual sense — engage ${names.parentLeadName} as the primary client with full partnership posture.`;
-  }
-  // mother only
-  return `${names.partnerName} (${names.childName}'s father) is not present today; he works during the week and is involved in evenings and weekends. ${names.parentLeadName} will refer to ${names.partnerName} warmly and competently when asked. The student is not required to assess father-inclusion behaviours directly, but asking about ${names.partnerName}'s involvement and how he is doing is appropriate practice and contributes positively to the Domain 3 and Standard 4.7 anchors.`;
+function renderExpectedPerformance(s){
+ const {fam,names,issueDomains,complications,normalDomains}=s;const lead=names.parentLeadName,ch=names.childName;
+ let p=`### Expected behaviours by active practice domain\n\n`;
+ p+=`**Domain 1 \u2014 Primary health care / anticipatory guidance:**\n\n`;
+ p+=`- Provides relevant anticipatory guidance for the issues raised, with concrete content framed collaboratively.\n- Signposts community resources where appropriate.\n\n`;
+ p+=`**Domain 2 \u2014 Child health, growth, development, wellbeing:**\n\n`;
+ p+=`- Asks about or performs growth and interprets it longitudinally, not as a single point.\n- Assesses across the surveillance domains \u2014 feeding, output, behaviour, hearing, vision, skin, settling \u2014 confirming the normal ones without over-investigating.\n`;
+ issueDomains.forEach(x=>p+=`- Notices and engages the issue: ${x.domain.label.toLowerCase()} \u2014 ${x.problem.label.toLowerCase()}.\n`);
+ p+=`- Distinguishes normal variation from concerning patterns and communicates the distinction to ${lead} in plain language.\n\n`;
+ p+=`**Domain 3 \u2014 Child\u2013parent relationship:**\n\n`;
+ p+=`- Observes parent\u2013child interaction; names ${lead}\u2019s attentiveness as a strength where natural; asks how ${lead} is doing.\n\n`;
+ if(complications.some(c=>(c.domains||[]).includes(4))) {p+=`**Domain 4 \u2014 Family wellbeing:**\n\n- Engages the complicating factor in play meaningfully; recognises normal adjustment versus concern; offers support without over-medicalising.\n\n`;}
+ if(fam.parent_role!=='father') {p+=`**Domain 5 \u2014 Father / partner wellbeing:**\n\n- Asks about ${names.partnerName} and the parenting partnership; includes ${names.partnerName} in the plan where relevant.\n\n`;}
+ p+=`**Domain 7 \u2014 Evaluates outcomes:**\n\n- Reviews the consultation in partnership with ${lead}; seeks verbal and non-verbal feedback; confirms follow-up; invites further questions before closing.\n\n`;
+ p+=`### Partnership / strengths-based indicators to watch for\n\n`;
+ p+=`**Positive (reward):** asking ${lead}\u2019s observations before interpreting; naming expertise; normalising concern as attentive parenting; plain language and checking understanding; collaborative framing; asking about ${lead}\u2019s wellbeing.\n\n`;
+ p+=`**Negative (flag):** talking about ${ch} as if ${lead} weren\u2019t there; verdicts without inviting ${lead}\u2019s view; dismissing concerns as anxiety; jargon without explanation; directive instruction without rationale; skipping ${lead}\u2019s wellbeing.\n\n`;
+ p+=`### Critical omissions to flag in feedback\n\n- Missing growth assessment entirely.\n`;
+ issueDomains.filter(x=>x.problem.severity==='major').forEach(x=>p+=`- Not engaging the major issue: ${x.domain.label.toLowerCase()} \u2014 ${x.problem.label.toLowerCase()}.\n`);
+ p+=`- Over-referring a normal-range domain (${normalDomains.map(d=>d.label.toLowerCase()).slice(0,3).join(', ')}\u2026) by treating normal variation as pathology.\n`;
+ return p;
 }
 
-function renderDisclosureTiers(visit, fam, names, budget, selectedPS) {
-  let tiers = `**Volunteer freely.** ${names.parentLeadName} will, at the opening of the visit or in early answers, volunteer:\n\n`;
-  visit.default_parent_concerns.forEach(c => tiers += `- ${c}.\n`);
-  tiers += `- That family supports are in place.\n`;
-  tiers += `\n`;
-  tiers += `**Reveal when asked.** ${names.parentLeadName} will give clear, accurate answers on direct questioning to: feeding details; output; sleep / settling; birth history; past medical history; immunisation status; family medical history; their own wellbeing at general level; partner and family support; prior CFHN engagement.\n\n`;
-  tiers += `**Reveal when probed.** ${names.parentLeadName} will give specific answers on specific probing to: the texture of their concerns; specifics of observations they've made about ${names.childName}; their own mood and load on close questioning (within the thresholds set by the psychosocial signal, if any — see Section 5).\n\n`;
-  tiers += `**Never volunteer directly.** ${names.parentLeadName} will not announce: any clinical interpretation of findings; any recommendation about the plan; any synthesis of the visit. These are the student's work to bring.`;
-  return tiers;
+const DOMAIN_TITLES={1:'Domain 1 \u2014 Primary health care',2:'Domain 2 \u2014 Child health, growth, development, wellbeing',3:'Domain 3 \u2014 Child\u2013parent relationship',4:'Domain 4 \u2014 Perinatal / family wellbeing',5:'Domain 5 \u2014 Father / partner wellbeing',7:'Domain 7 \u2014 Evaluates outcomes'};
+function renderDomainAnchor(d,s){
+ const names=s.names,lead=names.parentLeadName;
+ const T=DOMAIN_TITLES[d];if(!T)return '';
+ let a=`#### ${T}\n\n`;
+ if(d===1){a+=`- **Strong:** Covers the relevant anticipatory guidance with concrete content, integrated with ${lead}\u2019s situation and framed collaboratively; signposts at least one resource.\n- **Developing:** Covers most, some content thin or generic; mostly collaborative.\n- **Limited:** Misses opportunities; content directive rather than collaborative.\n- **Unsafe Practice:** Incorrect clinical information; fails visit-mandatory content entirely.\n`;}
+ else if(d===2){a+=`- **Strong:** Assesses across the surveillance domains, confirms the normal ones without over-investigating, detects and engages the scenario\u2019s issue(s), and communicates normal-versus-concerning to ${lead} in plain language.\n- **Developing:** Covers major elements with gaps in integration; mostly engages parental observations.\n- **Limited:** Significant assessment gaps; misses an issue or over-investigates a normal finding.\n- **Unsafe Practice:** Incorrect clinical information; misses growth assessment; misinterprets normal findings as pathological.\n`;}
+ else if(d===3){a+=`- **Strong:** Engages the relationship and ${lead}\u2019s observations as central; names attentiveness as a strength; asks meaningfully about ${lead}\u2019s wellbeing.\n- **Developing:** Engages thinly; asks about wellbeing in passing.\n- **Limited:** Treats parental concerns as deflectable; misses ${lead}\u2019s wellbeing.\n- **Unsafe Practice:** Over-medicalises normal vulnerability; dismisses concerns as unimportant.\n`;}
+ else if(d===4){a+=`- **Strong:** Explicit, meaningful engagement with the complicating factor; recognises normal adjustment versus concern; offers support without over-medicalising.\n- **Developing:** Some engagement but lacks depth.\n- **Limited:** Barely touched.\n- **Unsafe Practice:** Misses a clear signal; treats normal adjustment as pathology or vice versa.\n`;}
+ else if(d===5){a+=`- **Strong:** Engages partner inclusion appropriately (asks about the partner if not present, engages directly if present, includes in plans).\n- **Developing:** Partial engagement.\n- **Limited:** Misses the partner entirely.\n- **Unsafe Practice:** Active disregard of a present partner.\n`;}
+ else if(d===7){a+=`- **Strong:** Synthesises the consultation in partnership with ${lead}; seeks feedback; confirms follow-up; invites questions.\n- **Developing:** Synthesises somewhat one-sidedly; thin feedback-seeking.\n- **Limited:** Closes abruptly without synthesis or plan.\n- **Unsafe Practice:** Leaves ${lead} without a plan; provides an unsafe plan.\n`;}
+ return a;
+}
+function renderCascade(label,tiers){
+ let c=`#### ${label}\n\n| Tier | Out-of-character framing | In-character framing |\n| --- | --- | --- |\n`;
+ tiers.forEach((t,i)=>c+=`| ${i+1} | ${t.ooc} | ${t.ic} |\n`);
+ return c;
+}
+function renderRubric(s){
+ let r=`### Standards in play\n\nWhen citing in debrief, use only these MCaFHNA standards: ${computeStandards(s).join(', ')}. (Whole-standard level; sub-criteria can be added once authored.)\n\n`;
+ r+=`### Per-domain classification anchors\n\nFor each active domain, classify as Strong / Developing / Limited / Unsafe Practice.\n\n`;
+ computeActiveDomains(s).forEach(d=>{r+=renderDomainAnchor(d,s);r+='\n';});
+ r+=`### Hint cascade content per issue\n\nEach cascade has four tiers. Use the in-character column unless the complexity profile is Tutorial (then the OOC column, per Section 0.4).\n\n`;
+ if(s.issueDomains.length) s.issueDomains.forEach(x=>{r+=renderCascade(`${x.domain.label} \u2014 ${x.problem.label} (Domain ${x.domain.practice_domain})`,x.problem.hint_cascade);r+='\n';});
+ else r+='*No issue-specific cascades; this is a clean check.*\n\n';
+ r+=renderCascade('Follow-up planning (Domain 7)',[
+   {ooc:'Think about what the plan from today should include.',ic:'"So\u2026 what happens next? When do you come back?"'},
+   {ooc:'What would warrant getting in touch sooner?',ic:'"Is there anything in particular I should watch for before then?"'},
+   {ooc:'How would you confirm understanding and comfort with the plan?',ic:'"Can I just check I\u2019ve got the bit about what to do right?"'},
+   {ooc:'What feedback would you invite about the consultation itself?',ic:'"Was there anything I should have asked about today that I didn\u2019t?"'}
+ ]);
+ return r;
 }
 
-function renderToneShifts(names, budget) {
-  let shifts = `${names.parentLeadName}'s tone responds to partnership posture. When the student asks ${names.parentLeadName}'s observations first, names their expertise, normalises any reassurance-seeking without dismissing it, and frames decisions collaboratively — ${names.parentLeadName} opens up, elaborates more freely, becomes visibly warmer.\n\n`;
-  shifts += `When the student talks past ${names.parentLeadName}, dismisses concerns as anxiety, delivers verdicts without inviting their view, uses jargon without explanation, or moves quickly through clinical content without engaging their observations — ${names.parentLeadName} becomes more reserved, gives shorter answers, holds back concerns, may revert to a polite but emptier register.\n\n`;
-  if (budget.parent_forthcomingness === 'guarded') {
-    shifts += `${names.parentLeadName}'s baseline tolerance in this complex scenario is lower than typical — partnership failures cool tolerance noticeably faster. Reach parent breakdown only on sustained failure, but allow noticeable cooling on individual missteps.`;
-  } else {
-    shifts += `${names.parentLeadName}'s baseline tolerance is high. They will not reach the parent-judged exit threshold without sustained, severe partnership failure. A single missed open question or one moment of clinical hesitancy does not cool tolerance measurably.`;
-  }
-  return shifts;
+/* ===================== UI wiring ===================== */
+function readAnchors(){return{visit_type:document.getElementById('visitType').value,complexity_profile:document.getElementById('complexity').value,family_composition:document.getElementById('familyComp').value,cultural_context:document.getElementById('culturalContext').value};}
+function slugify(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
+function defaultSeed(a){return slugify(`${a.visit_type}_${a.complexity_profile}_${a.family_composition}_${a.cultural_context}`);}
+let currentBriefText='',currentFilename='';
+function generateBrief(){
+ const anchors=readAnchors();
+ const seedInput=document.getElementById('seedInput').value.trim();
+ const seedStr=seedInput?slugify(seedInput):defaultSeed(anchors);
+ const s=composeScenario(anchors,seedStr);
+ const briefText=renderBrief(s);
+ currentBriefText=briefText;currentFilename=`Training_Document_${seedStr}.txt`;
+ const pv=document.getElementById('previewBox');pv.textContent=briefText;pv.classList.remove('empty');
+ document.getElementById('previewDetails').open=true;
+ document.getElementById('summaryStatus').textContent=`${seedStr} \u00b7 ${currentFilename}`;
+ document.getElementById('grSeed').textContent=' '+seedStr;
+ document.getElementById('grAnchors').textContent=` ${s.visit.label} \u00b7 ${s.budget.label} \u00b7 ${s.fam.label} \u00b7 ${s.ctx.label}`;
+ document.getElementById('grFilename').textContent=' '+currentFilename;
+ document.getElementById('genReport').classList.add('show');
+ document.getElementById('copyBtn').disabled=false;document.getElementById('downloadBtn').disabled=false;
+ const ni=s.issueDomains.length,nc=s.complications.length;
+ const rf=document.getElementById('reviewFlag');if(s.ctx.needs_review)rf.classList.add('show');else rf.classList.remove('show');
+ setStatus(`Generated: ${ni} issue${ni===1?'':'s'} to detect, ${nc} complicating factor${nc===1?'':'s'}, ${s.normalDomains.length} domains normal.`,'success');
 }
-
-function renderFatherInclusion(fam, names) {
-  if (fam.parent_role === 'both') {
-    return `${names.partnerName} is in the room. Assessable father-inclusion behaviours: engaging ${names.partnerName} directly (eye contact, questions, validation); asking about ${names.partnerName}'s observations of ${names.childName}; including ${names.partnerName} in any plan; not assuming ${names.partnerName} is a passive presence. Failure to engage ${names.partnerName} during the consultation is a meaningful partnership omission.`;
-  }
-  return `With ${names.partnerName} not present, the assessable behaviours are: asking about ${names.partnerName} appropriately (involvement with ${names.childName}; how ${names.partnerName} is doing; how the parenting partnership is going); including ${names.partnerName} in any plan made with ${names.parentLeadName} where relevant; not assuming ${names.partnerName} is uninvolved or absent without information. Failure to enquire about ${names.partnerName} at all is a partnership omission to flag in debrief.`;
-}
-
-function renderHiddenContent(visit, fam, names, ctx, selectedSO) {
-  let content = `### Specific measurements and observations for this instance\n\n`;
-  content += renderGrowthData(visit, names);
-  content += `\n\n**Feeding:** ${visit.age_weeks <= 24 ? 'Exclusive breastfeeding established. Effective latch. Feeds on demand. Parent comfortable with feeding. No supply concerns.' : 'Mixed feeding: breastfeeding continues with introduction of solids underway. Parent reports good progress.'}\n\n`;
-  content += `**Output:** Within expected range for age (multiple heavy wet nappies daily; stools age-appropriate).\n\n`;
-  content += `**Reflexes:** Brisk and age-appropriate.\n\n`;
-  content += `**Fontanelles:** Unremarkable.\n\n`;
-
-  // SO-specific findings
-  selectedSO.forEach(so => {
-    if (so.id === 'so_motor_head_control_tummy_time') {
-      content += `**Motor / posture:** Head lag noticeable on pull-to-sit. Tummy-time aversion as described in Section 5. This is the major surveillance opportunity in the scenario.\n\n`;
-    }
-    if (so.id === 'so_skin_nevus_simplex') {
-      content += `**Skin (1):** Nevus simplex on back of neck as described in Section 5.\n\n`;
-    }
-    if (so.id === 'so_skin_milia_neonatal_acne') {
-      content += `**Skin (2):** Milia / neonatal acne on cheeks and shoulders as described in Section 5.\n\n`;
-    }
-    if (so.id === 'so_feeding_supply_uncertainty') {
-      content += `**Feeding/supply context:** Output and weight regain are within expected range. The mother's supply concern is anxiety-driven rather than clinically warranted, as detailed in Section 5.\n\n`;
-    }
-  });
-
-  content += `**Sensory engagement:** Tracks faces; responds to voices; ${visit.age_weeks <= 8 ? 'social smile may emerge during the visit' : 'engages with adults present in the room'}.\n\n`;
-  content += `### Family texture\n\n`;
-  content += `- **${names.parentLeadName} ${names.surname}**, ${names.parentLeadRole}, late twenties or early thirties, first-time parent.\n`;
-  content += `- **${names.childName} ${names.surname}**, ${visit.age_label}, first child.\n`;
-  if (names.partnerName && fam.parent_role !== 'father') {
-    content += `- **${names.partnerName} ${names.surname}**, ${names.partnerRole}${fam.parent_role === 'both' ? ' (present today)' : ' (not present today; works during the week)'}.\n`;
-  }
-  if (fam.parent_role === 'father') {
-    content += `- **Co-parent**: not present in this scenario; do not invent details unless the student asks and ${names.parentLeadName} provides them.\n`;
-  }
-  content += `- **Extended family**: at least one supportive grandparent in proximity.\n`;
-  content += `- **Social support**: parent group attendance possible; friend network of similar-stage families.\n`;
-  content += `- **Prior CFHN engagement**: at least one prior visit (postnatal home visit at 2 weeks, plus any subsequent routine visits).\n\n`;
-
-  content += `### Parental concerns at the start of the visit\n\n`;
-  visit.default_parent_concerns.forEach((c, i) => content += `${i + 1}. ${c}.\n`);
-
-  content += `\n### Cultural / linguistic specifics\n\n${ctx.description}\n`;
-
-  return content;
-}
-
-function renderGrowthData(visit, names) {
-  if (visit.age_weeks <= 8) {
-    return `**Growth at birth:** Weight 3.3 kg; length 50.1 cm; head circumference 34.5 cm.\n\n**Growth at this visit (${visit.age_label}):** Weight 4.2 kg (around 22nd centile); length 55.5 cm; head circumference 38 cm.\n\n**Growth interpretation (for agent reference only, never volunteered):** ${names.childName} is tracking along their own curve. Weight regain appropriate. Within healthy range and consistent with trajectory.`;
-  }
-  if (visit.age_weeks <= 30) {
-    return `**Growth at this visit (${visit.age_label}):** Weight 7.4 kg (~50th centile); length 67 cm; head circumference 43 cm.\n\n**Growth interpretation (for agent reference only, never volunteered):** Growth tracking well along expected curve. Consistent with previous measurements.`;
-  }
-  return `**Growth at this visit (${visit.age_label}):** Age-appropriate weight, length, and head circumference, tracking along established curves.`;
-}
-
-function renderExpectedPerformance(visit, fam, names, selectedSO, selectedAGO, selectedPS) {
-  let perf = `### Expected behaviours by active practice domain\n\n`;
-
-  perf += `**Domain 1 — Primary health care:**\n\n`;
-  selectedAGO.forEach(a => perf += `- Engages anticipatory guidance opportunity: ${a.label.toLowerCase()}.\n`);
-  perf += `- Signposts community resources where appropriate.\n\n`;
-
-  perf += `**Domain 2 — Child health, growth, development, wellbeing:**\n\n`;
-  perf += `- Performs or asks about growth measurements and interprets longitudinally — not as a single-point centile reaction.\n`;
-  perf += `- Asks about feeding, output, behaviour, developmental progress.\n`;
-  perf += `- Examines or asks about reflexes, fontanelles, head control, tone (age-appropriate).\n`;
-  selectedSO.forEach(s => perf += `- Notices and engages surveillance opportunity: ${s.label.toLowerCase()}.\n`);
-  perf += `- Distinguishes normal variation from concerning patterns; communicates the distinction to ${names.parentLeadName} in plain language.\n\n`;
-
-  perf += `**Domain 3 — Child–parent relationship / infant mental health:**\n\n`;
-  perf += `- Observes parent–child interaction.\n`;
-  perf += `- Names ${names.parentLeadName}'s attentiveness as a strength where natural.\n`;
-  perf += `- Asks how ${names.parentLeadName} is doing — sleep, mood, support, sense of themselves as a parent.\n`;
-  if (fam.parent_role === 'mother') {
-    perf += `- Asks about ${names.partnerName} and the parenting partnership.\n`;
-  }
-  perf += `\n`;
-
-  perf += `**Domain 7 — Evaluates outcomes:**\n\n`;
-  perf += `- Reviews the consultation in partnership with ${names.parentLeadName}.\n`;
-  perf += `- Seeks verbal and non-verbal feedback.\n`;
-  perf += `- Confirms follow-up.\n`;
-  perf += `- Invites further questions before closing.\n\n`;
-
-  perf += `### Partnership / strengths-based language indicators to watch for\n\n`;
-  perf += `**Positive (reward):** asking ${names.parentLeadName}'s observations before offering interpretation; naming ${names.parentLeadName}'s expertise; normalising parental concern as attentive parenting; using plain language and checking understanding; framing decisions collaboratively; asking about ${names.parentLeadName}'s own wellbeing.\n\n`;
-  perf += `**Negative (flag):** talking about ${names.childName} as if ${names.parentLeadName} weren't there; delivering verdicts without inviting ${names.parentLeadName}'s view; dismissing concerns as anxiety; lapsing into jargon without explanation; issuing directive instructions without rationale or negotiation; skipping ${names.parentLeadName}'s wellbeing entirely.\n\n`;
-
-  perf += `### Common omissions to flag in feedback (non-critical)\n\n`;
-  perf += `- Not interpreting growth longitudinally.\n`;
-  perf += `- Not asking about ${names.parentLeadName}'s wellbeing.\n`;
-  if (fam.parent_role === 'mother') perf += `- Not asking about ${names.partnerName}.\n`;
-  perf += `- Not signposting community resources.\n`;
-  perf += `- Generic or thin anticipatory guidance.\n\n`;
-
-  perf += `### Critical omissions to flag in feedback\n\n`;
-  perf += `- Missing growth assessment entirely.\n`;
-  selectedSO.filter(s => s.severity === 'major').forEach(s => perf += `- Not engaging with surveillance opportunity: ${s.label.toLowerCase()}.\n`);
-  selectedAGO.filter(a => a.id.startsWith('ago_immunisation') || a.id.startsWith('ago_safe_sleep')).forEach(a => perf += `- Not addressing visit-mandatory content: ${a.label.toLowerCase()}.\n`);
-
-  return perf;
-}
-
-function renderRubric(visit, fam, names, selectedSO, selectedAGO, selectedPS, budget) {
-  let rubric = `### Standards activation profile (active sub-criteria)\n\nSee Section 1 metadata for the active sub-criteria. Use only sub-criteria from this profile when citing in debrief.\n\n`;
-
-  rubric += `### Per-domain classification anchors\n\nFor each active domain, classify the student's performance as Strong / Developing / Limited / Unsafe Practice.\n\n`;
-
-  // Generate per-domain anchors
-  const activeDomains = computeActiveDomains(selectedSO, selectedAGO, selectedPS);
-  activeDomains.forEach(d => {
-    rubric += renderDomainAnchor(d, names, selectedSO, selectedAGO);
-    rubric += '\n';
-  });
-
-  rubric += `### Hint cascade content per active domain\n\n`;
-  rubric += `Each cascade has four tiers. Use the in-character column unless the complexity profile is Tutorial (in which case use the OOC column, per Section 0.4).\n\n`;
-
-  // Cascades for each SO
-  selectedSO.forEach(so => {
-    rubric += renderCascade(so.label + ` (Domain ${so.domain})`, so.hint_cascade);
-    rubric += '\n';
-  });
-  // Cascades for each AGO with one
-  selectedAGO.forEach(ago => {
-    if (ago.hint_cascade) {
-      rubric += renderCascade(ago.label + ` (Domain ${ago.domain})`, ago.hint_cascade);
-      rubric += '\n';
-    }
-  });
-
-  // Always include Domain 7 follow-up planning cascade
-  rubric += renderCascade('Follow-up planning (Domain 7)', [
-    { ooc: 'Think about what the plan from today should include.', ic: '"So… what happens next? When do we come back?"' },
-    { ooc: 'What would warrant getting in touch sooner?', ic: '"Is there anything in particular I should be watching for between now and then?"' },
-    { ooc: 'How would you confirm understanding and comfort with the plan?', ic: `"I think I've got all that, but can I just check I've understood the bit about ${selectedSO.length > 0 ? selectedSO[0].label.toLowerCase() : 'the plan'}?"` },
-    { ooc: 'What feedback would you invite about the consultation itself?', ic: '"Was there anything I should have asked about today that I didn\'t? I always feel like I\'m forgetting something."' }
-  ]);
-
-  return rubric;
-}
-
-function renderDomainAnchor(domain, names, selectedSO, selectedAGO) {
-  // Generic anchors per domain. Production version would have richer scenario-specific tailoring.
-  const titles = {
-    '1': 'Domain 1 — Primary health care',
-    '2': 'Domain 2 — Child health, growth, development, wellbeing',
-    '3': 'Domain 3 — Child–parent relationship / infant mental health',
-    '4': 'Domain 4 — Perinatal mental health and family wellbeing',
-    '5': 'Domain 5 — Father/partner wellbeing',
-    '7': 'Domain 7 — Evaluates outcomes'
-  };
-  if (!titles[domain]) return '';
-
-  let a = `#### ${titles[domain]}\n\n`;
-  if (domain === '1') {
-    const agoLabels = selectedAGO.map(g => g.label.toLowerCase()).join(', ');
-    a += `- **Strong:** Covers all anticipatory guidance opportunities (${agoLabels}) with concrete content, integrated with ${names.parentLeadName}'s situation and framed collaboratively. Signposts at least one community resource.\n`;
-    a += `- **Developing:** Covers most opportunities with some content thin or generic; mostly collaborative.\n`;
-    a += `- **Limited:** Misses one or more opportunities; content directive rather than collaborative.\n`;
-    a += `- **Unsafe Practice:** Provides incorrect clinical information; fails to address visit-mandatory content entirely.\n`;
-  } else if (domain === '2') {
-    a += `- **Strong:** Comprehensive assessment covering growth (interpreted longitudinally), feeding, output, reflexes, head control, sensory engagement, and any surveillance opportunities. Distinguishes normal variation from concerning patterns and communicates this distinction to ${names.parentLeadName} in plain language.\n`;
-    a += `- **Developing:** Covers major elements with gaps in integration; mostly engages parental observations.\n`;
-    a += `- **Limited:** Significant gaps in assessment content; anticipatory guidance underdeveloped.\n`;
-    a += `- **Unsafe Practice:** Provides incorrect clinical information; misses growth assessment entirely; misinterprets normal findings as pathological.\n`;
-  } else if (domain === '3') {
-    a += `- **Strong:** Engages parental concerns about play, development, and relationship as central; names ${names.parentLeadName}'s attentiveness as a strength; asks meaningfully about ${names.parentLeadName}'s own wellbeing; comments naturally on attachment signals.\n`;
-    a += `- **Developing:** Engages relevant content but thinly; asks about wellbeing in passing.\n`;
-    a += `- **Limited:** Treats parental developmental questions as deflectable; misses ${names.parentLeadName}'s wellbeing.\n`;
-    a += `- **Unsafe Practice:** Over-medicalises normal first-time-parent vulnerability; dismisses developmental questions as unimportant.\n`;
-  } else if (domain === '4') {
-    a += `- **Strong:** Explicit, meaningful psychosocial assessment integrated into the conversation; recognises normal adjustment vs concerning signals; offers appropriate support without over-medicalising.\n`;
-    a += `- **Developing:** Some psychosocial engagement but lacks depth.\n`;
-    a += `- **Limited:** Psychosocial domain barely touched.\n`;
-    a += `- **Unsafe Practice:** Misses clear psychosocial signals; treats normal adjustment as pathology or vice versa.\n`;
-  } else if (domain === '5') {
-    a += `- **Strong:** Engages partner inclusion appropriately (asking about partner if not present, engaging directly if present, including in plans).\n`;
-    a += `- **Developing:** Partial engagement.\n`;
-    a += `- **Limited:** Misses partner entirely.\n`;
-    a += `- **Unsafe Practice:** Active disregard of present partner.\n`;
-  } else if (domain === '7') {
-    a += `- **Strong:** Synthesises the consultation in partnership with ${names.parentLeadName} — what was discussed, what was agreed, what the plan is. Seeks verbal and non-verbal feedback. Confirms follow-up. Invites further questions.\n`;
-    a += `- **Developing:** Synthesises somewhat one-sidedly; thin feedback-seeking.\n`;
-    a += `- **Limited:** Closes abruptly without synthesis or plan.\n`;
-    a += `- **Unsafe Practice:** Does not close the consultation; leaves ${names.parentLeadName} without a plan; provides an unsafe plan.\n`;
-  }
-  return a;
-}
-
-function renderCascade(label, tiers) {
-  let c = `#### ${label}\n\n`;
-  c += `| Tier | Out-of-character framing | In-character framing |\n`;
-  c += `| --- | --- | --- |\n`;
-  tiers.forEach((t, i) => {
-    c += `| ${i + 1} | ${t.ooc} | ${t.ic} |\n`;
-  });
-  return c;
-}
-
-/* =========================================================================
-   UI WIRING
-   ========================================================================= */
-function readAnchors() {
-  return {
-    visit_type: document.getElementById('visitType').value,
-    complexity_profile: document.getElementById('complexity').value,
-    family_composition: document.getElementById('familyComp').value,
-    cultural_context: document.getElementById('culturalContext').value
-  };
-}
-
-let currentBriefText = '';
-let currentFilename = '';
-let currentSeed = '';
-
-function slugifySeed(s) {
-  // Normalise a seed string to slug-shape: lowercase, replace any non-alphanumeric
-  // run with a single underscore, trim leading/trailing underscores.
-  return s.toLowerCase()
-          .replace(/[^a-z0-9]+/g, '_')
-          .replace(/^_+|_+$/g, '');
-}
-
-function defaultSeedFromAnchors(anchors) {
-  // Compose a default slug-shaped seed from the four anchors.
-  return slugifySeed(`${anchors.visit_type}_${anchors.complexity_profile}_${anchors.family_composition}_${anchors.cultural_context}`);
-}
-
-function buildFilename(seedStr) {
-  return `Training_Document_${seedStr}.txt`;
-}
-
-function buildAnchorSummary(anchors) {
-  const v = VISIT_TYPES[anchors.visit_type].label;
-  const c = COMPLEXITY_BUDGETS[anchors.complexity_profile].label;
-  const f = FAMILY_COMPOSITIONS[anchors.family_composition].label;
-  const cx = CULTURAL_CONTEXTS[anchors.cultural_context].label;
-  return `${v}  ·  ${c}  ·  ${f}  ·  ${cx}`;
-}
-
-function generateBrief() {
-  const anchors = readAnchors();
-  const seedInput = document.getElementById('seedInput').value.trim();
-  const seedStr = seedInput ? slugifySeed(seedInput) : defaultSeedFromAnchors(anchors);
-
-  const rng = rngFromInputs(anchors, seedStr);
-  const content = selectContentItems(anchors, rng);
-  const names = selectNames(anchors, rng);
-  const briefText = renderBrief(anchors, content, names, seedStr);
-
-  currentBriefText = briefText;
-  currentSeed = seedStr;
-  currentFilename = buildFilename(seedStr);
-
-  // Write to preview box
-  const previewBox = document.getElementById('previewBox');
-  previewBox.textContent = briefText;
-  previewBox.classList.remove('empty');
-
-  // Update the collapsed-summary status line
-  document.getElementById('summaryStatus').textContent = `${seedStr} · ${currentFilename}`;
-
-  // Generation Report strip — always visible after generation, independent of preview toggle
-  document.getElementById('grSeed').textContent = ' ' + seedStr;
-  document.getElementById('grAnchors').textContent = ' ' + buildAnchorSummary(anchors);
-  document.getElementById('grFilename').textContent = ' ' + currentFilename;
-  document.getElementById('genReport').classList.add('show');
-
-  document.getElementById('copyBtn').disabled = false;
-  document.getElementById('downloadBtn').disabled = false;
-
-  // Review flag for ATSI
-  const ctx = CULTURAL_CONTEXTS[anchors.cultural_context];
-  const flag = document.getElementById('reviewFlag');
-  if (ctx.needs_review) flag.classList.add('show'); else flag.classList.remove('show');
-
-  setStatus(`Generated ${content.selectedSO.length} surveillance opportunit${content.selectedSO.length === 1 ? 'y' : 'ies'}, ${content.selectedAGO.length} anticipatory guidance opportunit${content.selectedAGO.length === 1 ? 'y' : 'ies'}, ${content.selectedPS.length} psychosocial signal${content.selectedPS.length === 1 ? '' : 's'}.`, 'success');
-}
-
-function setStatus(msg, kind) {
-  const el = document.getElementById('statusLine');
-  el.textContent = msg;
-  el.className = 'status-line ' + (kind || '');
-}
-
-function copyToClipboard() {
-  if (!currentBriefText) return;
-  navigator.clipboard.writeText(currentBriefText).then(() => {
-    setStatus('Copied to clipboard.', 'success');
-  }).catch(() => {
-    setStatus('Copy failed — try Download instead.', 'warn');
-  });
-}
-
-function downloadFile() {
-  if (!currentBriefText) return;
-  const blob = new Blob([currentBriefText], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = currentFilename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  setStatus(`Downloaded ${currentFilename}.`, 'success');
-}
-
-document.getElementById('generateBtn').addEventListener('click', generateBrief);
-document.getElementById('copyBtn').addEventListener('click', copyToClipboard);
-document.getElementById('downloadBtn').addEventListener('click', downloadFile);
-
-// Show cultural review banner when ATSI is selected (even before generation)
-document.getElementById('culturalContext').addEventListener('change', (e) => {
-  const flag = document.getElementById('reviewFlag');
-  if (e.target.value === 'atsi_review') flag.classList.add('show'); else flag.classList.remove('show');
-});
+function setStatus(m,k){const el=document.getElementById('statusLine');el.textContent=m;el.className='status-line '+(k||'');}
+function copyToClipboard(){if(!currentBriefText)return;navigator.clipboard.writeText(currentBriefText).then(()=>setStatus('Copied to clipboard.','success')).catch(()=>setStatus('Copy failed \u2014 try Download instead.','warn'));}
+function downloadFile(){if(!currentBriefText)return;const b=new Blob([currentBriefText],{type:'text/plain;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=currentFilename;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);setStatus(`Downloaded ${currentFilename}.`,'success');}
+document.getElementById('generateBtn').addEventListener('click',generateBrief);
+document.getElementById('copyBtn').addEventListener('click',copyToClipboard);
+document.getElementById('downloadBtn').addEventListener('click',downloadFile);
+document.getElementById('culturalContext').addEventListener('change',e=>{const rf=document.getElementById('reviewFlag');if((CULTURAL_CONTEXTS[e.target.value]||{}).needs_review)rf.classList.add('show');else rf.classList.remove('show');});
 </script>
-
 </body>
 </html>
